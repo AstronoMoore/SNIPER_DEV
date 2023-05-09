@@ -26,8 +26,21 @@ import matplotlib
 import matplotlib.pyplot as plt
 from mpi4py import MPI
 
+
+config_cleaned_lc_directory = "/Users/thomasmoore/Library/CloudStorage/OneDrive-Queen'sUniversityBelfast/TM/Long Rise Ibc/VLS_Cleaned_photometry"
+
 parser = argparse.ArgumentParser()
+
+parser.add_argument(
+    "-f",
+    "--file",
+    help="txt file containing a list of IAU names which SNIPER.py will work on",
+    dest="file",
+    type=argparse.FileType("r"),
+)
 args = parser.parse_args()
+
+print(args.file)
 
 
 global x, y, yerr
