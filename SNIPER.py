@@ -28,6 +28,9 @@ from mpi4py import MPI
 
 
 config_cleaned_lc_directory = "/Users/thomasmoore/Library/CloudStorage/OneDrive-Queen'sUniversityBelfast/TM/Long Rise Ibc/VLS_Cleaned_photometry"
+# MJD_minus = 400
+# MJD_plus = 700
+
 
 parser = argparse.ArgumentParser()
 
@@ -42,6 +45,12 @@ args = parser.parse_args()
 
 print(args.file)
 
+IAU_list = pd.read_csv(args.file)
+IAU_list.columns = ["IAU_NAME"]
+
+for transient in IAU_list["IAU_NAME"]:
+    print(transient)
+
 
 global x, y, yerr
 
@@ -52,9 +61,6 @@ warnings.filterwarnings("ignore")  # setting ignore as a parameter
 import logging
 
 logging.getLogger().setLevel(logging.ERROR)
-
-plt.rcParams["font.family"] = "Arial"
-
 
 # plt.style.use('ggplot')
 plt.style.use("default")
@@ -457,16 +463,6 @@ def flux_to_ABmag(flux):
     return mag
 
 
-MJD_minus = 400
-MJD_plus = 700
-
-
-from multiprocessing import cpu_count
-
-ncpu = cpu_count()
-print("{0} CPUs".format(ncpu))
-
-
 def fit_bazin(**kwargs):
     priors = kwargs.get("priors", [np.max(y), 0, 10, 20, np.mean(x)])
     # priors = np.array(priors)
@@ -692,30 +688,43 @@ nwalkers = 500
 nsteps = 500
 final_run_scale_walkers = 10
 final_run_scale_steps = 10
-comparison_objects = pd.read_csv("longrise_Template_TNS.txt")
 
-comparison_objects.insert(2, "risetime", "")
-comparison_objects.insert(2, "risetime_upper", "")
-comparison_objects.insert(2, "risetime_lower", "")
-comparison_objects.insert(2, "absolute_mag", "")
-comparison_objects.insert(2, "absolute_mag_err", "")
-comparison_objects.insert(2, "T_rise", "")
-comparison_objects.insert(2, "T_rise_lower", "")
-comparison_objects.insert(2, "T_rise_upper", "")
-comparison_objects.insert(2, "T_fall", "")
-comparison_objects.insert(2, "T_fall_lower", "")
-comparison_objects.insert(2, "T_fall_upper", "")
-comparison_objects.insert(2, "T_explode", "")
-comparison_objects.insert(2, "T_explode_lower", "")
-comparison_objects.insert(2, "T_explode_upper", "")
-comparison_objects.insert(2, "T_max", "")
-comparison_objects.insert(2, "T_max_sig", "")
+for transient in IAU_list["IAU_NAME"]:
+    print(transient)
 
-for object in tqdm(comparison_objects["TNS Name"], leave=False):
+# config_cleaned_lc_directory
+
+
+output = pd.DataFrame()
+
+print(output)
+
+entry = pd.DataFrame.from_dict({"firstname": ["John"], "lastname": ["Johny"]})
+
+df = pd.concat([df, entry], ignore_index=True)
+
+# comparison_objects.insert(2, "risetime", "")
+# comparison_objects.insert(2, "risetime_upper", "")
+# comparison_objects.insert(2, "risetime_lower", "")
+# comparison_objects.insert(2, "absolute_mag", "")
+# comparison_objects.insert(2, "absolute_mag_err", "")
+# comparison_objects.insert(2, "T_rise", "")
+# comparison_objects.insert(2, "T_rise_lower", "")
+# comparison_objects.insert(2, "T_rise_upper", "")
+# comparison_objects.insert(2, "T_fall", "")
+# comparison_objects.insert(2, "T_fall_lower", "")
+# comparison_objects.insert(2, "T_fall_upper", "")
+# comparison_objects.insert(2, "T_explode", "")
+# comparison_objects.insert(2, "T_explode_lower", "")
+# comparison_objects.insert(2, "T_explode_upper", "")
+# comparison_objects.insert(2, "T_max", "")
+# comparison_objects.insert(2, "T_max_sig", "")
+
+for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     print(f"Working on {object}")
-    object_info = comparison_objects[comparison_objects["TNS Name"] == object]
+    # object_info = comparison_objects[comparison_objects["TNS Name"] == object]
     f = []
-    f = cwd + "/cleaned/" + object + "/" + object + ".o.1.00days.lc.txt"
+    f = config_cleaned_lc_directory + object + "/" + object + ".o.1.00days.lc.txt"
     cols = [
         [
             "MJD",
