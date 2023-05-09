@@ -41,9 +41,20 @@ parser.add_argument(
     dest="file",
     type=argparse.FileType("r"),
 )
+
+parser.add_argument(
+    "-o",
+    "--output",
+    help="output directory (default cwd)",
+    dest="output_dir",
+)
+
 args = parser.parse_args()
 
 print(args.file)
+
+print("output dir")
+print(args.output_dir)
 
 IAU_list = pd.read_csv(args.file)
 IAU_list.columns = ["IAU_NAME"]
@@ -61,7 +72,7 @@ def def_global(x, y, y_err):
     global y_err_global
     x_global = x
     y_global = y
-    y_err_global, y_errr
+    y_err_global = y_err
 
 
 # suppressing warnings
@@ -772,8 +783,8 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     )
     df.drop(df[df.duJy > 50].index, inplace=True)
     # df = df.dropna()
-    max_y = np.argmax(savgol_filter(y, 5, 3))
-    x = np.array(x)
+    max_y = np.argmax(savgol_filter(df.uJy, 5, 3))
+    x = np.array(df.MJD)
     savgol_first_guess = x[max_y]
     df_cut_min = savgol_first_guess - MJD_minus
     df_cut_max = savgol_first_guess + MJD_plus
@@ -788,7 +799,9 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         lightcurve_data["uJy"].astype(float),
         lightcurve_data["duJy"].astype(float),
     )
+
     def_global(x, y, yerr)
+
     max_y = np.argmax(savgol_filter(y, 5, 3))
     x = np.array(x)
     savgol_first_guess = x[max_y]
