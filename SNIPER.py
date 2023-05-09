@@ -27,9 +27,9 @@ import matplotlib.pyplot as plt
 from mpi4py import MPI
 
 
-config_cleaned_lc_directory = "/Users/thomasmoore/Library/CloudStorage/OneDrive-Queen'sUniversityBelfast/TM/Long Rise Ibc/VLS_Cleaned_photometry"
-# MJD_minus = 400
-# MJD_plus = 700
+config_cleaned_lc_directory = "/Users/thomasmoore/Library/CloudStorage/OneDrive-Queen'sUniversityBelfast/TM/Long Rise Ibc/VLS_Cleaned_photometry/"
+MJD_minus = 400
+MJD_plus = 700
 
 
 parser = argparse.ArgumentParser()
@@ -52,7 +52,17 @@ for transient in IAU_list["IAU_NAME"]:
     print(transient)
 
 
-global x, y, yerr
+global x_global, y_global, y_err_global
+
+
+def def_global(x, y, y_err):
+    global x_global
+    global y_global
+    global y_err_global
+    x_global = x
+    y_global = y
+    y_err_global, y_errr
+
 
 # suppressing warnings
 import warnings
@@ -381,9 +391,11 @@ def rise_mjd_fit(t, a, T_exp_pow, n):
     return y
 
 
-def chisq_bazin(p, x, y, yerr):
+def chisq_bazin(p):
     A, B, T_rise, T_fall, t0 = p[0], p[1], p[2], p[3], p[4]
-    return np.sum(((y - (bazin(x, A, B, T_rise, T_fall, t0))) / yerr) ** 2)
+    return np.sum(
+        ((y_global - (bazin(x_global, A, B, T_rise, T_fall, t0))) / y_err_global) ** 2
+    )
 
 
 def lnpriorline_bazin(p):
@@ -399,8 +411,8 @@ def lnpriorline_bazin(p):
     return -np.inf
 
 
-def lnlikeline_bazin(p, x, y, yerr):
-    chisq = chisq_bazin(p, x, y, yerr)
+def lnlikeline_bazin(p):
+    chisq = chisq_bazin(p)
     return -0.5 * chisq
 
 
@@ -408,14 +420,16 @@ def lnprobline_bazin(p):
     lp = lnpriorline_bazin(p)
     if not np.isfinite(lp):
         return -np.inf
-    return lp + lnlikeline_bazin(p, x, y, yerr)
+    return lp + lnlikeline_bazin(p)
 
 
 # Doing the same treatment for the fireball model
 #  Inputs  = t, a, T_exp_pow, n
-def chisq_fireball(p, x, y, yerr):
+def chisq_fireball(p):
     a, T_exp_pow, n = p[0], p[1], p[2]
-    return np.sum(((y - (rise_mjd_fit(x, a, T_exp_pow, n))) / yerr) ** 2)
+    return np.sum(
+        ((y_global - (rise_mjd_fit(x_global, a, T_exp_pow, n))) / y_err_global) ** 2
+    )
 
 
 def lnpriorline_fireball(p, t_min, t_max):
@@ -425,8 +439,8 @@ def lnpriorline_fireball(p, t_min, t_max):
     return -np.inf
 
 
-def lnlikeline_fireball(p, x, y, yerr):
-    chisq = chisq_fireball(p, x, y, yerr)
+def lnlikeline_fireball(p):
+    chisq = chisq_fireball(p)
     return -0.5 * chisq
 
 
@@ -701,7 +715,7 @@ print(output)
 
 entry = pd.DataFrame.from_dict({"firstname": ["John"], "lastname": ["Johny"]})
 
-df = pd.concat([df, entry], ignore_index=True)
+# df = pd.concat([df, entry], ignore_index=True)
 
 # comparison_objects.insert(2, "risetime", "")
 # comparison_objects.insert(2, "risetime_upper", "")
@@ -752,11 +766,17 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     df = []
     df = pd.read_csv(f, delim_whitespace=True)
     df = df.filter(("MJD", "uJy", "duJy"), axis=1)
+    plt.plot(
+        df.MJD,
+        df.uJy,
+    )
     df.drop(df[df.duJy > 50].index, inplace=True)
     # df = df.dropna()
-    discovery_date = object_info["TNS Discovery MJD"].item()
-    df_cut_min = discovery_date - MJD_minus
-    df_cut_max = discovery_date + MJD_plus
+    max_y = np.argmax(savgol_filter(y, 5, 3))
+    x = np.array(x)
+    savgol_first_guess = x[max_y]
+    df_cut_min = savgol_first_guess - MJD_minus
+    df_cut_max = savgol_first_guess + MJD_plus
     df_new = df.dropna(how="any", axis=0)
 
     lightcurve_data = df_new.loc[
@@ -768,6 +788,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         lightcurve_data["uJy"].astype(float),
         lightcurve_data["duJy"].astype(float),
     )
+    def_global(x, y, yerr)
     max_y = np.argmax(savgol_filter(y, 5, 3))
     x = np.array(x)
     savgol_first_guess = x[max_y]
@@ -799,6 +820,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         lightcurve_data["uJy"].astype(float),
         lightcurve_data["duJy"].astype(float),
     )
+    def_global(x, y, yerr)
     max_y = np.argmax(savgol_filter(y, 5, 3))
     times = np.array(x)
     savgol_first_guess = times[max_y]
@@ -843,12 +865,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
 
     mean_flux = np.nanmean(bazin_results[4])
     std_flux = np.nanstd(bazin_results[4])
-    mag = flux_to_ABmag(mean_flux)
-    mag_err = AB_mag_err(mean_flux, std_flux)
-    z = []
-    z = object_info["z"].astype(float).item()
-    absolute_mag = mag - (5 * np.log10(cosmo.luminosity_distance(z).to(u.pc).value)) + 5
-    absolute_mag_err = mag_err + 0.2
 
     # time_max_mcmc,time_max_mcmc_err,best_params,upper_quartile,lower_quartile,t_max_samples,flux_max_samples,t_samples,
     T_rise = bazin_results[2][2]
@@ -936,9 +952,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     print("T_explode_upper", T_explode_upper)
     print("T_max", T_max)
     print("T_max_sig", T_max_sig)
-
-    print(f"Mag = {mag}±{mag_err}")
-    print(f"Mag = {absolute_mag}± {mag_err + 0.2}")
 
     from IPython.display import display, Math
 
