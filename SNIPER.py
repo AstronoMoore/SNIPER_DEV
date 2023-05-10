@@ -455,9 +455,6 @@ def lnlikeline_bazin(p):
     chisq = chisq_bazin(p)
     if math.isnan(chisq):
         print("nan nan nan nan nan nan a")
-        print(x_global)
-        print(y_global)
-        print(y_err_global)
     return -0.5 * chisq
 
 
@@ -471,6 +468,7 @@ def lnprobline_bazin(p):
     ln_like = lnlikeline_bazin(p)
     if math.isnan(ln_like):
         print("ln_like is nan")
+        return -np.inf
     return lp + ln_like
 
 
