@@ -1,8 +1,9 @@
 import sys
 import importlib
 from importlib import reload
+import matplotlib.pyplot as plt
+import matplotlib
 import os
-import argparse
 import math
 import glob
 import astropy
@@ -12,6 +13,7 @@ from astropy.cosmology import WMAP9 as cosmo
 from astropy.visualization import quantity_support
 from matplotlib import pyplot as plt
 import time
+import matplotlib
 import scipy as sp
 from scipy.signal import savgol_filter
 import numpy as np
@@ -25,95 +27,13 @@ from tqdm import *
 import matplotlib
 import matplotlib.pyplot as plt
 from mpi4py import MPI
-from mpipool import MPIPool
-
-# from multiprocessing import Pool
 from schwimmbad import MPIPool
 
-# pool = MPIPool()
-
-# suppressing warnings
-import warnings
-
-warnings.filterwarnings("ignore")  # setting ignore as a parameter
-import logging
-
-logging.getLogger().setLevel(logging.ERROR)
+global x, y, yerr
 
 # plt.style.use('ggplot')
 plt.style.use("default")
 plt.rcParams["font.family"] = "Arial"
-
-config_cleaned_lc_directory = "/Users/thomasmoore/Library/CloudStorage/OneDrive-Queen'sUniversityBelfast/TM/Long Rise Ibc/VLS_Cleaned_photometry/"
-MJD_minus = 400
-MJD_plus = 1000
-nwalkers = 500
-nsteps = 10000
-progress = True
-plot = True
-
-final_run_walker_multiplier = 2
-final_run_step_multiplier = 5
-
-
-parser = argparse.ArgumentParser()
-
-parser.add_argument(
-    "-f",
-    "--file",
-    help="txt file containing a list of IAU names which SNIPER.py will work on",
-    dest="file",
-    type=argparse.FileType("r"),
-)
-
-parser.add_argument(
-    "-o",
-    "--output",
-    help="output directory (default cwd)",
-    default=os.getcwd(),
-    dest="output_dir",
-)
-
-args = parser.parse_args()
-
-output_dir = args.output_dir
-output_dir = output_dir + "/SNIPER_Output"
-
-# Creating output directories if they do no already exist
-
-if os.path.isdir(output_dir + "/corner") == False:
-    print("No corner plot directory - making one!")
-    os.makedirs(output_dir + "/corner/")
-
-if os.path.isdir(output_dir + "/overplot/") == False:
-    print("No overplot plot directory - making one!")
-    os.makedirs(output_dir + "/overplot/")
-
-
-if os.path.isdir(output_dir + "/scatter/") == False:
-    print("No scatter plot directory - making one!")
-    os.makedirs(output_dir + "/scatter/")
-
-
-IAU_list = pd.read_csv(args.file)
-IAU_list.columns = ["IAU_NAME"]
-
-
-global x_global, y_global, y_err_global
-
-
-def def_global(x, y, y_err):
-    global x_global
-    global y_global
-    global y_err_global
-    x_global = np.array(x).astype("float64")
-    y_global = np.array(y).astype("float64")
-    y_err_global = np.array(y_err).astype("float64")
-    print_global()
-
-
-def print_global():
-    print(x_global)
 
 
 def Lambobstorest(lambda_obs, Z):
@@ -430,11 +350,9 @@ def rise_mjd_fit(t, a, T_exp_pow, n):
     return y
 
 
-def chisq_bazin(p):
+def chisq_bazin(p, x, y, yerr):
     A, B, T_rise, T_fall, t0 = p[0], p[1], p[2], p[3], p[4]
-    return np.sum(
-        ((y_global - (bazin(x_global, A, B, T_rise, T_fall, t0))) / y_err_global) ** 2
-    )
+    return np.sum(((y - (bazin(x, A, B, T_rise, T_fall, t0))) / yerr) ** 2)
 
 
 def lnpriorline_bazin(p):
@@ -445,42 +363,28 @@ def lnpriorline_bazin(p):
         and 1 < T_rise < 3000
         and 1 < T_fall < 300
         and 0 < t0
-        and T_rise / T_fall < 1
     ):
-        return 0.0
+        return 0
     return -np.inf
 
 
-def lnlikeline_bazin(p):
-    chisq = chisq_bazin(p)
-    if math.isnan(chisq):
-        print("nan nan nan nan nan nan a")
-        print(x_global)
-        print(y_global)
-        print(y_err_global)
+def lnlikeline_bazin(p, x, y, yerr):
+    chisq = chisq_bazin(p, x, y, yerr)
     return -0.5 * chisq
 
 
 def lnprobline_bazin(p):
     lp = lnpriorline_bazin(p)
-    if math.isnan(lp):
-        print("lp is nan")
-        return -np.inf
     if not np.isfinite(lp):
         return -np.inf
-    ln_like = lnlikeline_bazin(p)
-    if math.isnan(ln_like):
-        print("ln_like is nan")
-    return lp + ln_like
+    return lp + lnlikeline_bazin(p, x, y, yerr)
 
 
 # Doing the same treatment for the fireball model
 #  Inputs  = t, a, T_exp_pow, n
-def chisq_fireball(p):
+def chisq_fireball(p, x, y, yerr):
     a, T_exp_pow, n = p[0], p[1], p[2]
-    return np.sum(
-        ((y_global - (rise_mjd_fit(x_global, a, T_exp_pow, n))) / y_err_global) ** 2
-    )
+    return np.sum(((y - (rise_mjd_fit(x, a, T_exp_pow, n))) / yerr) ** 2)
 
 
 def lnpriorline_fireball(p, t_min, t_max):
@@ -490,8 +394,8 @@ def lnpriorline_fireball(p, t_min, t_max):
     return -np.inf
 
 
-def lnlikeline_fireball(p):
-    chisq = chisq_fireball(p)
+def lnlikeline_fireball(p, x, y, yerr):
+    chisq = chisq_fireball(p, x, y, yerr)
     return -0.5 * chisq
 
 
@@ -499,7 +403,7 @@ def lnprobline_fireball(p, t_min, t_max):
     lp = lnpriorline_fireball(p, t_min, t_max)
     if not np.isfinite(lp):
         return -np.inf
-    return lp + lnlikeline_fireball(p)
+    return lp + lnlikeline_fireball(p, x, y, yerr)
 
 
 def bazin(x, A, B, T_rise, T_fall, t0):
@@ -528,9 +432,14 @@ def flux_to_ABmag(flux):
     return mag
 
 
+MJD_minus = 400
+MJD_plus = 700
+
+
 def fit_bazin(**kwargs):
     priors = kwargs.get("priors", [np.max(y), 0, 10, 20, np.mean(x)])
     # priors = np.array(priors)
+    print("priors", priors)
     nwalkers = kwargs.get("nwalkers", int(100))
     nsteps = kwargs.get("nsteps", int(500))
     progress = kwargs.get("progress", True)
@@ -543,6 +452,7 @@ def fit_bazin(**kwargs):
     # pos = priors + 1 * np.random.randn(nwalkers, ndim)
     # A, B, T_rise, T_fall, t0
 
+    print("pos 1 ", priors[0])
     pos = np.zeros((nwalkers, ndim))
     pos1 = float(priors[0]) + 10 * np.random.randn(nwalkers)
     pos2 = float(priors[1]) + 1 * np.random.randn(nwalkers)
@@ -552,10 +462,9 @@ def fit_bazin(**kwargs):
     pos = [pos1, pos2, pos3, pos4, pos5]
     pos = np.transpose(pos)
 
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
-    sampler.run_mcmc(pos, nsteps, progress=progress)
-
-    print("sampling done!!!!")
+    with MPIPool() as pool:
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
+        sampler.run_mcmc(pos, nsteps, progress=True)
 
     samples = sampler.get_chain()
     flat_samples = sampler.get_chain(discard=int(nsteps * 0.15), thin=15, flat=True)
@@ -577,7 +486,7 @@ def fit_bazin(**kwargs):
             show_titles=True,
             title_kwargs={"fontsize": 12},
         )
-        plt.savefig(output_dir + "/corner/" + object + "_bazin_corner_plot.png")
+        plt.savefig("corner_plots/" + object + "_corner_plot.png")
 
         plt.figure(dpi=200)
         fig, axes = plt.subplots(5, figsize=(10, 7), sharex=True)
@@ -591,7 +500,7 @@ def fit_bazin(**kwargs):
             ax.yaxis.set_label_coords(-0.1, 0.5)
 
         axes[-1].set_xlabel("step number")
-        plt.savefig(output_dir + "/scatter/" + object + "_bazin_scatter.png")
+        plt.savefig("scatter/" + object + "_scatter.png")
         plt.close()
 
         # overplotting on graph
@@ -631,7 +540,7 @@ def fit_bazin(**kwargs):
         A_lower, B_lower, T_rise_lower, T_fall_lower, t0_lower = lower_quartile
 
         # plt.vlines(time_max_mcmc,5000,-5000,)
-        plt.savefig(output_dir + "/overplot/" + object + "_bazin_overplot.png")
+        plt.savefig("overplot/" + object + "_scatter.png")
         plt.close()
 
         print("best params", best_params)
@@ -672,7 +581,7 @@ def fit_fireball(**kwargs):
     pos[:, 2] = float(priors[2]) + 5 * np.random.randn(nwalkers)
 
     sampler = emcee.EnsembleSampler(
-        nwalkers, ndim, lnprobline_fireball, args=(t_min, t_max)
+        nwalkers, ndim, lnprobline_fireball, args=(t_min, t_max), threads=10
     )
     sampler.run_mcmc(pos, nsteps, progress=progress)
     samples = sampler.get_chain()
@@ -687,6 +596,7 @@ def fit_fireball(**kwargs):
 
     if plot == True:
         labels = ["a", "T_explode", "n"]
+        import corner
 
         plt.figure(dpi=300)
         fig = corner.corner(
@@ -696,7 +606,7 @@ def fit_fireball(**kwargs):
             show_titles=True,
             title_kwargs={"fontsize": 12},
         )
-        plt.savefig(output_dir + "/corner/" + object + "_fireball_corner.png")
+        plt.savefig("corner_plots/" + object + "_fireball.png")
 
         plt.figure(dpi=200)
         fig, axes = plt.subplots(3, figsize=(10, 7), sharex=True)
@@ -710,7 +620,7 @@ def fit_fireball(**kwargs):
             ax.yaxis.set_label_coords(-0.1, 0.5)
 
         axes[-1].set_xlabel("step number")
-        plt.savefig(output_dir + "/scatter/" + object + "_bazin_scatter.png")
+        plt.savefig("scatter/" + object + "_fireball.png")
         plt.close()
 
         # overplotting on graph
@@ -729,8 +639,7 @@ def fit_fireball(**kwargs):
         )
         plt.ylim(-10, np.max(y))
         plt.errorbar(x, y, yerr, fmt=".", color="grey", capsize=0)
-        plt.savefig(output_dir + "/overplot/" + object + "_fireball_overplot.png")
-
+        plt.savefig("overplot/" + object + "_fireball.png")
         plt.close()
 
     best_params = np.zeros(ndim)
@@ -747,30 +656,37 @@ def fit_fireball(**kwargs):
     return best_params, upper_quartile, lower_quartile, flat_samples
 
 
-# df = pd.concat([df, entry], ignore_index=True)
+progress = True
+plot = True
+nwalkers = 500
+nsteps = 500
+final_run_scale_walkers = 10
+final_run_scale_steps = 10
 
-# comparison_objects.insert(2, "risetime", "")
-# comparison_objects.insert(2, "risetime_upper", "")
-# comparison_objects.insert(2, "risetime_lower", "")
-# comparison_objects.insert(2, "absolute_mag", "")
-# comparison_objects.insert(2, "absolute_mag_err", "")
-# comparison_objects.insert(2, "T_rise", "")
-# comparison_objects.insert(2, "T_rise_lower", "")
-# comparison_objects.insert(2, "T_rise_upper", "")
-# comparison_objects.insert(2, "T_fall", "")
-# comparison_objects.insert(2, "T_fall_lower", "")
-# comparison_objects.insert(2, "T_fall_upper", "")
-# comparison_objects.insert(2, "T_explode", "")
-# comparison_objects.insert(2, "T_explode_lower", "")
-# comparison_objects.insert(2, "T_explode_upper", "")
-# comparison_objects.insert(2, "T_max", "")
-# comparison_objects.insert(2, "T_max_sig", "")
+comparison_objects = pd.read_csv("longrise_Template_TNS.txt")
 
-for object in tqdm(IAU_list["IAU_NAME"], leave=False):
+comparison_objects.insert(2, "risetime", "")
+comparison_objects.insert(2, "risetime_upper", "")
+comparison_objects.insert(2, "risetime_lower", "")
+comparison_objects.insert(2, "absolute_mag", "")
+comparison_objects.insert(2, "absolute_mag_err", "")
+comparison_objects.insert(2, "T_rise", "")
+comparison_objects.insert(2, "T_rise_lower", "")
+comparison_objects.insert(2, "T_rise_upper", "")
+comparison_objects.insert(2, "T_fall", "")
+comparison_objects.insert(2, "T_fall_lower", "")
+comparison_objects.insert(2, "T_fall_upper", "")
+comparison_objects.insert(2, "T_explode", "")
+comparison_objects.insert(2, "T_explode_lower", "")
+comparison_objects.insert(2, "T_explode_upper", "")
+comparison_objects.insert(2, "T_max", "")
+comparison_objects.insert(2, "T_max_sig", "")
+
+for object in tqdm(comparison_objects["TNS Name"], leave=False):
     print(f"Working on {object}")
-    # object_info = comparison_objects[comparison_objects["TNS Name"] == object]
+    object_info = comparison_objects[comparison_objects["TNS Name"] == object]
     f = []
-    f = config_cleaned_lc_directory + object + "/" + object + ".o.1.00days.lc.txt"
+    f = cwd + "/cleaned/" + object + "/" + object + ".o.1.00days.lc.txt"
     cols = [
         [
             "MJD",
@@ -798,30 +714,25 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     df = []
     df = pd.read_csv(f, delim_whitespace=True)
     df = df.filter(("MJD", "uJy", "duJy"), axis=1)
-    plt.plot(
-        df.MJD,
-        df.uJy,
-    )
     df.drop(df[df.duJy > 50].index, inplace=True)
     # df = df.dropna()
-    max_y = np.argmax(savgol_filter(df.uJy, 5, 3))
-    x = np.array(df.MJD)
-    savgol_first_guess = x[max_y]
-    df_cut_min = savgol_first_guess - MJD_minus
-    df_cut_max = savgol_first_guess + MJD_plus
+    discovery_date = object_info["TNS Discovery MJD"].item()
+    df_cut_min = discovery_date - MJD_minus
+    df_cut_max = discovery_date + MJD_plus
     df_new = df.dropna(how="any", axis=0)
 
     lightcurve_data = df_new.loc[
-        (df["MJD"].astype("float64") >= df_cut_min)
-        & (df["MJD"].astype("float64") <= df_cut_max)
+        (df["MJD"].astype(float) >= df_cut_min)
+        & (df["MJD"].astype(float) <= df_cut_max)
     ]
     x, y, yerr = (
-        lightcurve_data["MJD"].astype("float64"),
-        lightcurve_data["uJy"].astype("float64"),
-        lightcurve_data["duJy"].astype("float64"),
+        lightcurve_data["MJD"].astype(float),
+        lightcurve_data["uJy"].astype(float),
+        lightcurve_data["duJy"].astype(float),
     )
-
-    def_global(x, y, yerr)
+    max_y = np.argmax(savgol_filter(y, 5, 3))
+    x = np.array(x)
+    savgol_first_guess = x[max_y]
 
     bazin_results = fit_bazin(
         progress=progress,
@@ -835,8 +746,8 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         progress=progress,
         plot=plot,
         object=object,
-        nwalkers=nwalkers * final_run_walker_multiplier,
-        nsteps=nsteps * final_run_step_multiplier,
+        nwalkers=nwalkers * final_run_scale_walkers,
+        nsteps=nsteps * final_run_scale_steps,
     )
 
     # bazin_results = fit_bazin(x,y,yerr, priors = bazin_results[2], progress = True, plot = True, object = '22qh', nwalkers= 1000, nsteps = 1000)
@@ -850,7 +761,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         lightcurve_data["uJy"].astype(float),
         lightcurve_data["duJy"].astype(float),
     )
-    def_global(x, y, yerr)
     max_y = np.argmax(savgol_filter(y, 5, 3))
     times = np.array(x)
     savgol_first_guess = times[max_y]
@@ -862,14 +772,22 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         nwalkers=nwalkers,
         nsteps=nsteps,
     )
+    # if fireball_results[0][1] < np.nanmean(bazin_results[3]):
+    #   new_t_cutoff = np.mean([fireball_results[0][1],np.nanmean(bazin_results[3])])
+    #  lightcurve_data = lightcurve_data.drop(lightcurve_data[lightcurve_data['MJD'] >= new_t_cutoff].index)
+    # x,y,yerr = lightcurve_data["MJD"].astype(float),lightcurve_data["uJy"].astype(float),lightcurve_data["duJy"].astype(float)
+
     fireball_results = fit_fireball(
         priors=fireball_results[0],
         progress=progress,
         plot=plot,
         object=object,
-        nwalkers=nwalkers * final_run_walker_multiplier,
-        nsteps=nsteps * final_run_step_multiplier,
+        nwalkers=nwalkers * final_run_scale_walkers,
+        nsteps=nsteps * final_run_scale_steps,
     )
+
+    # A, B, T_rise, T_fall, t0
+    # a, T_exp, n
 
     bazin_max = np.nanmean(bazin_results[0])
     bazin_max_err = np.nanstd(bazin_results[1])
@@ -887,6 +805,12 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
 
     mean_flux = np.nanmean(bazin_results[4])
     std_flux = np.nanstd(bazin_results[4])
+    mag = flux_to_ABmag(mean_flux)
+    mag_err = AB_mag_err(mean_flux, std_flux)
+    z = []
+    z = object_info["z"].astype(float).item()
+    absolute_mag = mag - (5 * np.log10(cosmo.luminosity_distance(z).to(u.pc).value)) + 5
+    absolute_mag_err = mag_err + 0.2
 
     # time_max_mcmc,time_max_mcmc_err,best_params,upper_quartile,lower_quartile,t_max_samples,flux_max_samples,t_samples,
     T_rise = bazin_results[2][2]
@@ -974,6 +898,9 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     print("T_explode_upper", T_explode_upper)
     print("T_max", T_max)
     print("T_max_sig", T_max_sig)
+
+    print(f"Mag = {mag}±{mag_err}")
+    print(f"Mag = {absolute_mag}± {mag_err + 0.2}")
 
     from IPython.display import display, Math
 
