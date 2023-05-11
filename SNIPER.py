@@ -26,6 +26,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from mpi4py import MPI
 from mpipool import MPIPool
+from emcee.autocorr import AutocorrError, function_1d
 
 # from multiprocessing import Pool
 from schwimmbad import MPIPool
@@ -44,16 +45,16 @@ logging.getLogger().setLevel(logging.ERROR)
 plt.style.use("default")
 plt.rcParams["font.family"] = "Arial"
 
-config_cleaned_lc_directory = "/Users/thomasmoore/Library/CloudStorage/OneDrive-Queen'sUniversityBelfast/TM/Long Rise Ibc/VLS_Cleaned_photometry/"
+config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
 MJD_minus = 400
 MJD_plus = 1000
-nwalkers = 500
-nsteps = 10000
+nwalkers = 200
+nsteps = 5000
 progress = True
 plot = True
 
 final_run_walker_multiplier = 2
-final_run_step_multiplier = 5
+final_run_step_multiplier = 10
 
 
 parser = argparse.ArgumentParser()
@@ -109,11 +110,6 @@ def def_global(x, y, y_err):
     x_global = np.array(x).astype("float64")
     y_global = np.array(y).astype("float64")
     y_err_global = np.array(y_err).astype("float64")
-    print_global()
-
-
-def print_global():
-    print(x_global)
 
 
 def Lambobstorest(lambda_obs, Z):
@@ -181,14 +177,6 @@ def tardis_sim(config, luminosity, time, z):
     tardis_config = config
     tardis_config.supernova.luminosity_requested = luminosity
     tardis_config.supernova.time_explosion = time
-    print("\n")
-    print(
-        "\
-      n"
-    )
-    print("\n")
-    print("\n")
-    print(tardis_config)
     sim = run_tardis(
         tardis_config,
         show_convergence_plots=False,
@@ -453,21 +441,17 @@ def lnpriorline_bazin(p):
 
 def lnlikeline_bazin(p):
     chisq = chisq_bazin(p)
-    if math.isnan(chisq):
-        print("nan nan nan nan nan nan a")
     return -0.5 * chisq
 
 
 def lnprobline_bazin(p):
     lp = lnpriorline_bazin(p)
     if math.isnan(lp):
-        print("lp is nan")
         return -np.inf
     if not np.isfinite(lp):
         return -np.inf
     ln_like = lnlikeline_bazin(p)
     if math.isnan(ln_like):
-        print("ln_like is nan")
         return -np.inf
     return lp + ln_like
 
@@ -483,7 +467,7 @@ def chisq_fireball(p):
 
 def lnpriorline_fireball(p, t_min, t_max):
     a, T_exp_pow, n = p
-    if 1 < a < 500 and t_min < T_exp_pow < t_max and 1 < n < 3:
+    if 1 < a < 2 * np.max(y_global) and t_min < T_exp_pow < t_max and 1.8 < n < 2.2:
         return 0
     return -np.inf
 
@@ -497,7 +481,10 @@ def lnprobline_fireball(p, t_min, t_max):
     lp = lnpriorline_fireball(p, t_min, t_max)
     if not np.isfinite(lp):
         return -np.inf
-    return lp + lnlikeline_fireball(p)
+    ln_like = +lnlikeline_fireball(p)
+    if math.isnan(ln_like):
+        return -np.inf
+    return lp + ln_like
 
 
 def bazin(x, A, B, T_rise, T_fall, t0):
@@ -553,10 +540,14 @@ def fit_bazin(**kwargs):
     sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
     sampler.run_mcmc(pos, nsteps, progress=progress)
 
-    print("sampling done!!!!")
+    # with MPIPool() as pool:
+    #    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
+    #    sampler.run_mcmc(pos, nsteps, progress=True)
 
     samples = sampler.get_chain()
-    flat_samples = sampler.get_chain(discard=int(nsteps * 0.15), thin=15, flat=True)
+    flat_samples = sampler.get_chain(
+        discard=int(nsteps * 0.4), flat=True, thin=int(nsteps * 0.01)
+    )
 
     best_params = np.zeros(ndim)
     for i in range(ndim):
@@ -633,6 +624,7 @@ def fit_bazin(**kwargs):
         plt.close()
 
         print("best params", best_params)
+        gc.collect()
         return (
             time_max_mcmc,
             time_max_mcmc_err,
@@ -674,7 +666,9 @@ def fit_fireball(**kwargs):
     )
     sampler.run_mcmc(pos, nsteps, progress=progress)
     samples = sampler.get_chain()
-    flat_samples = sampler.get_chain(discard=int(nsteps * 0.1), thin=15, flat=True)
+    flat_samples = sampler.get_chain(
+        discard=int(nsteps * 0.4), thin=int(nsteps * 0.01), flat=True
+    )
 
     labels = ["A", "b", "c"]
     inds = np.random.randint(len(flat_samples), size=100)
@@ -742,33 +736,19 @@ def fit_fireball(**kwargs):
     a, T_exp_pow, n = best_params
     a_upper, T_exp_pow_upper, n_upper = upper_quartile
     a_lower, T_exp_pow_lower, n_lower = lower_quartile
+    gc.collect()
     return best_params, upper_quartile, lower_quartile, flat_samples
 
 
-# df = pd.concat([df, entry], ignore_index=True)
+SNIPER_OUTPUT = pd.DataFrame()
 
-# comparison_objects.insert(2, "risetime", "")
-# comparison_objects.insert(2, "risetime_upper", "")
-# comparison_objects.insert(2, "risetime_lower", "")
-# comparison_objects.insert(2, "absolute_mag", "")
-# comparison_objects.insert(2, "absolute_mag_err", "")
-# comparison_objects.insert(2, "T_rise", "")
-# comparison_objects.insert(2, "T_rise_lower", "")
-# comparison_objects.insert(2, "T_rise_upper", "")
-# comparison_objects.insert(2, "T_fall", "")
-# comparison_objects.insert(2, "T_fall_lower", "")
-# comparison_objects.insert(2, "T_fall_upper", "")
-# comparison_objects.insert(2, "T_explode", "")
-# comparison_objects.insert(2, "T_explode_lower", "")
-# comparison_objects.insert(2, "T_explode_upper", "")
-# comparison_objects.insert(2, "T_max", "")
-# comparison_objects.insert(2, "T_max_sig", "")
+print("starting loop")
 
 for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     print(f"Working on {object}")
-    # object_info = comparison_objects[comparison_objects["TNS Name"] == object]
     f = []
     f = config_cleaned_lc_directory + object + "/" + object + ".o.1.00days.lc.txt"
+    # print(f)
     cols = [
         [
             "MJD",
@@ -842,6 +822,13 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     lightcurve_data = lightcurve_data.drop(
         lightcurve_data[lightcurve_data["MJD"] >= np.nanmean(bazin_results[0])].index
     )
+    print(f"t_max = {np.nanmean(bazin_results[0])}")
+
+    lightcurve_data = lightcurve_data.drop(
+        lightcurve_data[
+            lightcurve_data["MJD"] <= (np.nanmean(bazin_results[0]) - 200)
+        ].index
+    )
 
     x, y, yerr = (
         lightcurve_data["MJD"].astype(float),
@@ -849,17 +836,17 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         lightcurve_data["duJy"].astype(float),
     )
     def_global(x, y, yerr)
-    max_y = np.argmax(savgol_filter(y, 5, 3))
-    times = np.array(x)
-    savgol_first_guess = times[max_y]
+    print(np.nanmean(bazin_results[0]))
+    first_guess = np.nanmean(bazin_results[0])
     fireball_results = fit_fireball(
-        priors=[1, savgol_first_guess, 2],
+        priors=[1, first_guess, 2],
         progress=progress,
         plot=plot,
         object=object,
         nwalkers=nwalkers,
         nsteps=nsteps,
     )
+
     fireball_results = fit_fireball(
         priors=fireball_results[0],
         progress=progress,
@@ -878,11 +865,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     risetime_err_lower = t_explode_lower - bazin_max_err
     risetime_err_upper = t_explode_upper + bazin_max_err
 
-    print(f"Bazin T Max [mjd] = {bazin_max}±{bazin_max_err}")
-    print(
-        f"Fireball Explosion Epoch [mjd] = {t_explode}+{t_explode_upper}-{t_explode_upper}"
-    )
-
     mean_flux = np.nanmean(bazin_results[4])
     std_flux = np.nanstd(bazin_results[4])
 
@@ -897,69 +879,26 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     T_explode_lower = fireball_results[0][1] - fireball_results[1][1]
     T_explode_upper = fireball_results[0][1] - fireball_results[2][1]
     T_max = bazin_max
-    T_max_sig = bazin_max_err
+    T_max_err = bazin_max_err
 
-    comparison_objects["risetime"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = risetime
-
-    comparison_objects["risetime_upper"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = risetime_err_upper
-
-    comparison_objects["risetime_lower"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = risetime_err_lower
-
-    comparison_objects["absolute_mag"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = absolute_mag
-
-    comparison_objects["absolute_mag_err"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = absolute_mag_err
-
-    comparison_objects["T_rise"].loc[comparison_objects["TNS Name"] == object] = T_rise
-
-    comparison_objects["T_rise_lower"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = T_rise_lower
-
-    comparison_objects["T_rise_upper"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = T_rise_upper
-
-    comparison_objects["T_fall"].loc[comparison_objects["TNS Name"] == object] = T_fall
-
-    comparison_objects["T_fall_lower"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = T_fall_lower
-
-    comparison_objects["T_fall_upper"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = T_fall_upper
-
-    comparison_objects["T_fall_upper"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = T_fall_upper
-
-    comparison_objects["T_explode"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = T_explode
-
-    comparison_objects["T_explode_lower"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = T_explode_lower
-
-    comparison_objects["T_explode_upper"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = T_explode_upper
-
-    comparison_objects["T_max"].loc[comparison_objects["TNS Name"] == object] = T_max
-
-    comparison_objects["T_max_sig"].loc[
-        comparison_objects["TNS Name"] == object
-    ] = T_max_sig
+    results_dict = {
+        "TNS Name": object,
+        "risetime": risetime,
+        "risetime_upper": risetime_err_upper,
+        "risetime_lower": risetime_err_lower,
+        "T_rise": T_rise,
+        "T_rise_upper": T_rise_upper,
+        "T_rise_lower": T_rise_lower,
+        "T_fall": T_fall,
+        "T_fall_upper": T_fall_upper,
+        "T_fall_lower": T_fall_lower,
+        "T_explode": T_explode,
+        "T_explode_lower": T_explode_lower,
+        "T_explode_upper": T_explode_upper,
+        "T_max": T_max,
+        "T_max_err": T_max_err,
+    }
+    SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
 
     print("T_rise", T_rise)
     print("T_rise_lower", T_rise_lower)
@@ -971,7 +910,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     print("T_explode_lower", T_explode_lower)
     print("T_explode_upper", T_explode_upper)
     print("T_max", T_max)
-    print("T_max_sig", T_max_sig)
+    print("T_max_err", T_max_err)
 
     from IPython.display import display, Math
 
@@ -979,6 +918,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     txt = txt.format(risetime, abs(risetime_err_lower), risetime_err_upper, str(object))
     display(Math(txt))
 
-    comparison_objects.to_csv("KELVIN_OUTPUT.txt")
+    SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.txt", index=False)
     plt.close("all")
     gc.collect()
