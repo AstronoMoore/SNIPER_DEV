@@ -46,15 +46,15 @@ plt.style.use("default")
 plt.rcParams["font.family"] = "Arial"
 
 config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
-MJD_minus = 400
-MJD_plus = 1000
+MJD_minus = 500
+MJD_plus = 500
 nwalkers = 200
 nsteps = 5000
 progress = True
 plot = True
 
 final_run_walker_multiplier = 2
-final_run_step_multiplier = 10
+final_run_step_multiplier = 2
 
 
 parser = argparse.ArgumentParser()
@@ -96,8 +96,10 @@ if os.path.isdir(output_dir + "/scatter/") == False:
     os.makedirs(output_dir + "/scatter/")
 
 
-IAU_list = pd.read_csv(args.file)
-IAU_list.columns = ["IAU_NAME"]
+IAU_list = pd.read_csv(args.file, header=None)
+IAU_list.columns = ["IAU_NAME", "t_guess"]
+
+print(IAU_list.t_guess)
 
 
 global x_global, y_global, y_err_global
@@ -618,8 +620,9 @@ def fit_bazin(**kwargs):
         A, B, T_rise, T_fall, t0 = best_params
         A_upper, B_upper, T_rise_upper, T_fall_upper, t0_upper = upper_quartile
         A_lower, B_lower, T_rise_lower, T_fall_lower, t0_lower = lower_quartile
+        print(f"t max = {time_max_mcmc}")
+        plt.vlines(time_max_mcmc, np.min(x_global), np.max(x_global), color="k")
 
-        # plt.vlines(time_max_mcmc,5000,-5000,)
         plt.savefig(output_dir + "/overplot/" + object + "_bazin_overplot.png")
         plt.close()
 
@@ -745,7 +748,9 @@ SNIPER_OUTPUT = pd.DataFrame()
 print("starting loop")
 
 for object in tqdm(IAU_list["IAU_NAME"], leave=False):
+    t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == object, "t_guess"]
     print(f"Working on {object}")
+    print(f"t_guess = {float(t_guess)}")
     f = []
     f = config_cleaned_lc_directory + object + "/" + object + ".o.1.00days.lc.txt"
     # print(f)
@@ -782,11 +787,14 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     )
     df.drop(df[df.duJy > 50].index, inplace=True)
     # df = df.dropna()
-    max_y = np.argmax(savgol_filter(df.uJy, 5, 3))
     x = np.array(df.MJD)
-    savgol_first_guess = x[max_y]
-    df_cut_min = savgol_first_guess - MJD_minus
-    df_cut_max = savgol_first_guess + MJD_plus
+    if math.isnan(t_guess) is True:
+        max_y = np.argmax(savgol_filter(df.uJy, 10, 3))
+        savgol_first_guess = x[max_y]
+        t_guess = savgol_first_guess
+
+    df_cut_min = float(t_guess) - MJD_minus
+    df_cut_max = float(t_guess) + MJD_plus
     df_new = df.dropna(how="any", axis=0)
 
     lightcurve_data = df_new.loc[
@@ -824,17 +832,21 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     )
     print(f"t_max = {np.nanmean(bazin_results[0])}")
 
-    lightcurve_data = lightcurve_data.drop(
-        lightcurve_data[
-            lightcurve_data["MJD"] <= (np.nanmean(bazin_results[0]) - 200)
-        ].index
-    )
+    # lightcurve_data = lightcurve_data.drop(
+    #    lightcurve_data[
+    #        lightcurve_data["MJD"] <= (np.nanmean(bazin_results[0]) - 200)
+    #    ].index
+    # )
 
     x, y, yerr = (
         lightcurve_data["MJD"].astype(float),
         lightcurve_data["uJy"].astype(float),
         lightcurve_data["duJy"].astype(float),
     )
+
+    plt.figure()
+    plt.plot(x, y)
+    plt.savefig(object + ".png")
     def_global(x, y, yerr)
     print(np.nanmean(bazin_results[0]))
     first_guess = np.nanmean(bazin_results[0])
