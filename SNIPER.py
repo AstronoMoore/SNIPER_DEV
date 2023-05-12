@@ -48,13 +48,13 @@ plt.rcParams["font.family"] = "Arial"
 config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
 MJD_minus = 500
 MJD_plus = 500
-nwalkers = 200
+nwalkers = 30
 nsteps = 5000
 progress = True
 plot = True
 
 final_run_walker_multiplier = 2
-final_run_step_multiplier = 2
+final_run_step_multiplier = 4
 
 
 parser = argparse.ArgumentParser()
@@ -500,6 +500,10 @@ def baz_tmax(t0, T_rise, T_fall):
     return t0 + T_rise * np.log((T_fall / T_rise) - 1)
 
 
+def baz_tmax(t0, T_rise, T_fall):
+    return t0 + T_rise * np.log((T_fall / (T_rise) - 1))
+
+
 def rise_mjd_fit(t, a, T_exp_pow, n):
     y = np.where(t <= T_exp_pow, 0, a * (t - T_exp_pow) ** n)
     return y
@@ -516,7 +520,7 @@ def flux_to_ABmag(flux):
 
 
 def fit_bazin(**kwargs):
-    priors = kwargs.get("priors", [np.max(y), 0, 10, 20, np.mean(x)])
+    priors = kwargs.get("priors", [0.5 * np.max(y_global), 0, 5, 10, np.mean(x_global)])
     # priors = np.array(priors)
     nwalkers = kwargs.get("nwalkers", int(100))
     nsteps = kwargs.get("nsteps", int(500))
@@ -591,9 +595,20 @@ def fit_bazin(**kwargs):
         x0 = np.linspace(np.min(x), np.max(x), 300)
         for ind in inds:
             sample = flat_samples[ind]
-            plt.plot(x0, bazin(x0, *sample), "blue", alpha=0.1)
-        plt.errorbar(x, y, yerr, fmt=".", color="grey", capsize=0)
-        plt.ylim(min(y) * 0.9, np.max(y) * 1.1)
+            plt.plot(x0, bazin(x0, *sample), "deepskyblue", alpha=0.1)
+        plt.plot([], [], color="deepskyblue", alpha=0.9, label="Bazin Evaluations")
+
+        plt.errorbar(
+            x_global,
+            y_global,
+            y_err_global,
+            fmt=".",
+            color="black",
+            capsize=0,
+            label="ATLAS o-band",
+        )
+
+        plt.ylim(min(y_global) * 0.9, np.max(y_global) * 1.1)
         A = flat_samples[:, 0]
         B = flat_samples[:, 1]
         T_rise = flat_samples[:, 2]
@@ -621,9 +636,19 @@ def fit_bazin(**kwargs):
         A_upper, B_upper, T_rise_upper, T_fall_upper, t0_upper = upper_quartile
         A_lower, B_lower, T_rise_lower, T_fall_lower, t0_lower = lower_quartile
         print(f"t max = {time_max_mcmc}")
-        plt.vlines(time_max_mcmc, np.min(x_global), np.max(x_global), color="k")
-
+        plt.ylabel(r" Flux Density [$\rm \mu Jy$]")
+        plt.xlabel(r"time [mjd]")
+        plt.legend(frameon=False)
+        plt.vlines(
+            bazin_maximum,
+            -50,
+            np.max(y_global) * 1.3,
+            color="gray",
+            alpha=0.9,
+            linestyle="--",
+        )
         plt.savefig(output_dir + "/overplot/" + object + "_bazin_overplot.png")
+
         plt.close()
 
         print("best params", best_params)
@@ -641,7 +666,7 @@ def fit_bazin(**kwargs):
 
 
 def fit_fireball(**kwargs):
-    priors = kwargs.get("priors", [1, np.mean(x), 1])
+    priors = kwargs.get("priors", [1, np.mean(x_global), 1])
     # print(f'No priors given = assumning {priors}')
     nwalkers = kwargs.get("nwalkers", int(1000))
     nsteps = kwargs.get("nsteps", int(5000))
@@ -649,8 +674,8 @@ def fit_fireball(**kwargs):
     plot = kwargs.get("plot", False)
     object = kwargs.get("object", "")
 
-    t_min = np.min(x)
-    t_max = np.max(x)
+    t_min = np.min(x_global)
+    t_max = np.max(x_global)
 
     # dispersion = np.max( ((abs(np.mean(x) - t_min)), (abs(np.mean(x) - t_max))))
     dispersion = 50
@@ -709,11 +734,11 @@ def fit_fireball(**kwargs):
         plt.close()
 
         # overplotting on graph
-        x0 = np.linspace(np.min(x), np.max(x), 300)
+        x0 = np.linspace(np.min(x_global), np.max(x_global), 300)
         plt.figure(dpi=300)
         for ind in inds:
             sample = flat_samples[ind]
-            plt.plot(x0, rise_mjd_fit(x0, *sample), "green", alpha=0.1)
+            plt.plot(x0, rise_mjd_fit(x0, *sample), "mediumorchid", alpha=0.1)
         plt.errorbar(
             lightcurve_data["MJD"],
             lightcurve_data["uJy"],
@@ -722,8 +747,13 @@ def fit_fireball(**kwargs):
             capsize=0,
             label="rising points",
         )
-        plt.ylim(-10, np.max(y))
-        plt.errorbar(x, y, yerr, fmt=".", color="grey", capsize=0)
+        plt.ylim(-10, np.max(y_global))
+        plt.errorbar(x_global, y_global, yerr, fmt=".", color="grey", capsize=0)
+        plt.plot([], [], color="mediumorchid", alpha=0.9, label="Fireball Evaluations")
+        plt.vlines(time_explode, 0, 100, color="k")
+        plt.ylabel(r" Flux Density [$\rm \mu Jy$]")
+        plt.xlabel(r"time [mjd]")
+        plt.legend(frameon=False)
         plt.savefig(output_dir + "/overplot/" + object + "_fireball_overplot.png")
 
         plt.close()
@@ -825,12 +855,22 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         nsteps=nsteps * final_run_step_multiplier,
     )
 
+    A, B, T_rise, T_fall, t0 = bazin_results[2]
+
+    print("hello")
+    print(baz_tmax(t0, T_rise, T_fall))
+
     # bazin_results = fit_bazin(x,y,yerr, priors = bazin_results[2], progress = True, plot = True, object = '22qh', nwalkers= 1000, nsteps = 1000)
     # removing lightucurve after max light
-    lightcurve_data = lightcurve_data.drop(
-        lightcurve_data[lightcurve_data["MJD"] >= np.nanmean(bazin_results[0])].index
-    )
-    print(f"t_max = {np.nanmean(bazin_results[0])}")
+
+    lightcurve_data = df_new.loc[
+        (df["MJD"].astype("float64") <= baz_tmax(t0, T_rise, T_fall))
+    ]
+
+    lightcurve_data = df_new.loc[
+        (df["MJD"].astype("float64") >= baz_tmax(t0, T_rise, T_fall) - 200)
+    ]
+    print(f"t_max = {bazin_results[0]}")
 
     # lightcurve_data = lightcurve_data.drop(
     #    lightcurve_data[
@@ -851,12 +891,12 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     print(np.nanmean(bazin_results[0]))
     first_guess = np.nanmean(bazin_results[0])
     fireball_results = fit_fireball(
-        priors=[1, first_guess, 2],
+        priors=[np.max(y_global), first_guess, 2],
         progress=progress,
         plot=plot,
         object=object,
-        nwalkers=nwalkers,
-        nsteps=nsteps,
+        nwalkers=nwalkers * 3,
+        nsteps=nsteps * 3,
     )
 
     fireball_results = fit_fireball(
@@ -864,12 +904,12 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         progress=progress,
         plot=plot,
         object=object,
-        nwalkers=nwalkers * final_run_walker_multiplier,
-        nsteps=nsteps * final_run_step_multiplier,
+        nwalkers=nwalkers * 3 * final_run_walker_multiplier,
+        nsteps=nsteps * 3 * final_run_step_multiplier,
     )
 
-    bazin_max = np.nanmean(bazin_results[0])
-    bazin_max_err = np.nanstd(bazin_results[1])
+    bazin_max = bazin_results[0]
+    bazin_max_err = bazin_results[1]
     t_explode = fireball_results[0][1]
     t_explode_lower = fireball_results[0][1] - fireball_results[1][1]
     t_explode_upper = fireball_results[0][1] - fireball_results[2][1]
