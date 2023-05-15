@@ -46,15 +46,19 @@ plt.style.use("default")
 plt.rcParams["font.family"] = "Arial"
 
 config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
-MJD_minus = 500
-MJD_plus = 500
-nwalkers = 30
-nsteps = 5000
+MJD_minus = 800
+MJD_plus = 800
+nwalkers_bazin = 2000
+nsteps_bazin = 5000
+
+nwalkers_fireball = 1000
+nsteps_fireball = 10000
+
 progress = True
 plot = True
 
 final_run_walker_multiplier = 2
-final_run_step_multiplier = 4
+final_run_step_multiplier = 2
 
 
 parser = argparse.ArgumentParser()
@@ -94,6 +98,10 @@ if os.path.isdir(output_dir + "/overplot/") == False:
 if os.path.isdir(output_dir + "/scatter/") == False:
     print("No scatter plot directory - making one!")
     os.makedirs(output_dir + "/scatter/")
+
+if os.path.isdir(output_dir + "/combined_output/") == False:
+    print("No combined_output plot directory - making one!")
+    os.makedirs(output_dir + "/combined_output/")
 
 
 IAU_list = pd.read_csv(args.file, header=None)
@@ -469,7 +477,7 @@ def chisq_fireball(p):
 
 def lnpriorline_fireball(p, t_min, t_max):
     a, T_exp_pow, n = p
-    if 1 < a < 2 * np.max(y_global) and t_min < T_exp_pow < t_max and 1.8 < n < 2.2:
+    if 1 < a < 100 * np.max(y_global) and t_min < T_exp_pow < t_max and 1.5 < n < 2.5:
         return 0
     return -np.inf
 
@@ -504,9 +512,9 @@ def baz_tmax(t0, T_rise, T_fall):
     return t0 + T_rise * np.log((T_fall / (T_rise) - 1))
 
 
-def rise_mjd_fit(t, a, T_exp_pow, n):
-    y = np.where(t <= T_exp_pow, 0, a * (t - T_exp_pow) ** n)
-    return y
+# def rise_mjd_fit(t, a, T_exp_pow, n):
+#    y = np.where(t <= T_exp_pow, 0, a * (t - T_exp_pow) ** n)
+#    return y
 
 
 def AB_mag_err(flux, dflux):
@@ -538,21 +546,21 @@ def fit_bazin(**kwargs):
     pos1 = float(priors[0]) + 10 * np.random.randn(nwalkers)
     pos2 = float(priors[1]) + 1 * np.random.randn(nwalkers)
     pos3 = float(priors[2]) + 5 * np.random.randn(nwalkers)
-    pos4 = float(priors[3]) + 5 * np.random.randn(nwalkers)
-    pos5 = float(priors[4]) + 50 * np.random.randn(nwalkers)
+    pos4 = float(priors[3]) + 10 * np.random.randn(nwalkers)
+    pos5 = float(priors[4]) + 250 * np.random.randn(nwalkers)
     pos = [pos1, pos2, pos3, pos4, pos5]
     pos = np.transpose(pos)
 
     sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
     sampler.run_mcmc(pos, nsteps, progress=progress)
 
-    # with MPIPool() as pool:
-    #    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
-    #    sampler.run_mcmc(pos, nsteps, progress=True)
+    #    with MPIPool() as pool:
+    #        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
+    #        sampler.run_mcmc(pos, nsteps, progress=True)
 
     samples = sampler.get_chain()
     flat_samples = sampler.get_chain(
-        discard=int(nsteps * 0.4), flat=True, thin=int(nsteps * 0.01)
+        discard=int(nsteps * 0.4), flat=True, thin=int(nsteps * 0.05)
     )
 
     best_params = np.zeros(ndim)
@@ -650,7 +658,6 @@ def fit_bazin(**kwargs):
         plt.savefig(output_dir + "/overplot/" + object + "_bazin_overplot.png")
 
         plt.close()
-
         print("best params", best_params)
         gc.collect()
         return (
@@ -666,7 +673,7 @@ def fit_bazin(**kwargs):
 
 
 def fit_fireball(**kwargs):
-    priors = kwargs.get("priors", [1, np.mean(x_global), 1])
+    priors = kwargs.get("priors", [100, np.mean(x_global), 2])
     # print(f'No priors given = assumning {priors}')
     nwalkers = kwargs.get("nwalkers", int(1000))
     nsteps = kwargs.get("nsteps", int(5000))
@@ -685,14 +692,21 @@ def fit_fireball(**kwargs):
 
     #  a, T_exp_pow, n
     pos = np.zeros((nwalkers, ndim))
-    pos[:, 0] = float(priors[0]) + 30 * np.random.randn(nwalkers)
-    pos[:, 1] = float(priors[1]) + 300 * np.random.randn(nwalkers)
-    pos[:, 2] = float(priors[2]) + 5 * np.random.randn(nwalkers)
+    pos[:, 0] = float(priors[0]) + 5 * np.random.randn(nwalkers)
+    pos[:, 1] = float(priors[1]) + 1000 * np.random.randn(nwalkers)
+    pos[:, 2] = float(priors[2]) + 0.5 * np.random.randn(nwalkers)
 
     sampler = emcee.EnsembleSampler(
         nwalkers, ndim, lnprobline_fireball, args=(t_min, t_max)
     )
     sampler.run_mcmc(pos, nsteps, progress=progress)
+
+    # with MPIPool() as pool:
+    #    sampler = emcee.EnsembleSampler(
+    #        nwalkers, ndim, lnprobline_fireball, args=(t_min, t_max), pool=pool
+    #    )
+    #    sampler.run_mcmc(pos, nsteps, progress=True)
+
     samples = sampler.get_chain()
     flat_samples = sampler.get_chain(
         discard=int(nsteps * 0.4), thin=int(nsteps * 0.01), flat=True
@@ -769,6 +783,8 @@ def fit_fireball(**kwargs):
     a, T_exp_pow, n = best_params
     a_upper, T_exp_pow_upper, n_upper = upper_quartile
     a_lower, T_exp_pow_lower, n_lower = lower_quartile
+    plt.close()
+    plt.close("all")
     gc.collect()
     return best_params, upper_quartile, lower_quartile, flat_samples
 
@@ -815,7 +831,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         df.MJD,
         df.uJy,
     )
-    df.drop(df[df.duJy > 50].index, inplace=True)
+    df.drop(df[df.duJy > 80].index, inplace=True)
     # df = df.dropna()
     x = np.array(df.MJD)
     if math.isnan(t_guess) is True:
@@ -837,66 +853,65 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         lightcurve_data["duJy"].astype("float64"),
     )
 
+    # combined output plot
+    fig, ax = plt.subplots(dpi=300)
+    ax.errorbar(x, y, yerr, color="k", linestyle="")
+
     def_global(x, y, yerr)
 
     bazin_results = fit_bazin(
         progress=progress,
         plot=plot,
         object=object,
-        nwalkers=nwalkers,
-        nsteps=nsteps,
+        nwalkers=nwalkers_bazin,
+        nsteps=nsteps_bazin,
     )
     bazin_results = fit_bazin(
         priors=bazin_results[2],
         progress=progress,
         plot=plot,
         object=object,
-        nwalkers=nwalkers * final_run_walker_multiplier,
-        nsteps=nsteps * final_run_step_multiplier,
+        nwalkers=nwalkers_bazin * final_run_walker_multiplier,
+        nsteps=nsteps_bazin * final_run_step_multiplier,
     )
 
     A, B, T_rise, T_fall, t0 = bazin_results[2]
 
-    print("hello")
-    print(baz_tmax(t0, T_rise, T_fall))
+    x_range = np.linspace(np.min(x), np.max(x), 200)
+    ax.plot(
+        x_range,
+        bazin(x_range, A, B, T_rise, T_fall, t0),
+        color="blue",
+        linestyle="-",
+        label="Bazin",
+    )
 
-    # bazin_results = fit_bazin(x,y,yerr, priors = bazin_results[2], progress = True, plot = True, object = '22qh', nwalkers= 1000, nsteps = 1000)
     # removing lightucurve after max light
 
-    lightcurve_data = df_new.loc[
-        (df["MJD"].astype("float64") <= baz_tmax(t0, T_rise, T_fall))
+    lightcurve_data = lightcurve_data.loc[
+        (lightcurve_data["MJD"].astype("float64") <= baz_tmax(t0, T_rise, T_fall))
     ]
 
-    lightcurve_data = df_new.loc[
-        (df["MJD"].astype("float64") >= baz_tmax(t0, T_rise, T_fall) - 200)
+    lightcurve_data = lightcurve_data.loc[
+        (lightcurve_data["MJD"].astype("float64") >= baz_tmax(t0, T_rise, T_fall) - 200)
     ]
     print(f"t_max = {bazin_results[0]}")
-
-    # lightcurve_data = lightcurve_data.drop(
-    #    lightcurve_data[
-    #        lightcurve_data["MJD"] <= (np.nanmean(bazin_results[0]) - 200)
-    #    ].index
-    # )
 
     x, y, yerr = (
         lightcurve_data["MJD"].astype(float),
         lightcurve_data["uJy"].astype(float),
         lightcurve_data["duJy"].astype(float),
     )
-
-    plt.figure()
-    plt.plot(x, y)
-    plt.savefig(object + ".png")
     def_global(x, y, yerr)
-    print(np.nanmean(bazin_results[0]))
-    first_guess = np.nanmean(bazin_results[0])
+    first_guess = np.nanmean(bazin_results[0]) - 40
+
     fireball_results = fit_fireball(
-        priors=[np.max(y_global), first_guess, 2],
+        priors=[np.max(y), first_guess, 2],
         progress=progress,
         plot=plot,
         object=object,
-        nwalkers=nwalkers * 3,
-        nsteps=nsteps * 3,
+        nwalkers=nwalkers_fireball,
+        nsteps=nsteps_fireball,
     )
 
     fireball_results = fit_fireball(
@@ -904,8 +919,18 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         progress=progress,
         plot=plot,
         object=object,
-        nwalkers=nwalkers * 3 * final_run_walker_multiplier,
-        nsteps=nsteps * 3 * final_run_step_multiplier,
+        nwalkers=nwalkers_fireball * final_run_walker_multiplier,
+        nsteps=nsteps_fireball * final_run_step_multiplier,
+    )
+    x_range = np.linspace(np.min(x), baz_tmax(t0, T_rise, T_fall), 200)
+
+    a, T_exp_pow, n = fireball_results[0]
+    ax.plot(
+        x_range,
+        rise_mjd_fit(x_range, a, T_exp_pow, n),
+        color="red",
+        linestyle="-",
+        label="fireball",
     )
 
     bazin_max = bazin_results[0]
@@ -919,6 +944,9 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
 
     mean_flux = np.nanmean(bazin_results[4])
     std_flux = np.nanstd(bazin_results[4])
+
+    fig.savefig(output_dir + "/combined_output/" + object + ".png")
+    plt.close()
 
     # time_max_mcmc,time_max_mcmc_err,best_params,upper_quartile,lower_quartile,t_max_samples,flux_max_samples,t_samples,
     T_rise = bazin_results[2][2]
@@ -951,7 +979,8 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         "T_max_err": T_max_err,
     }
     SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
-
+    print(f"{object} parameters")
+    print("risetime ", risetime)
     print("T_rise", T_rise)
     print("T_rise_lower", T_rise_lower)
     print("T_rise_upper", T_rise_upper)
