@@ -48,10 +48,10 @@ plt.rcParams["font.family"] = "Arial"
 config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
 MJD_minus = 800
 MJD_plus = 800
-nwalkers_bazin = 2000
+nwalkers_bazin = 100
 nsteps_bazin = 5000
 
-nwalkers_fireball = 1000
+nwalkers_fireball = 100
 nsteps_fireball = 10000
 
 progress = True
@@ -547,7 +547,7 @@ def fit_bazin(**kwargs):
     pos2 = float(priors[1]) + 1 * np.random.randn(nwalkers)
     pos3 = float(priors[2]) + 5 * np.random.randn(nwalkers)
     pos4 = float(priors[3]) + 10 * np.random.randn(nwalkers)
-    pos5 = float(priors[4]) + 250 * np.random.randn(nwalkers)
+    pos5 = float(priors[4]) + 5 * np.random.randn(nwalkers)
     pos = [pos1, pos2, pos3, pos4, pos5]
     pos = np.transpose(pos)
 
@@ -693,7 +693,7 @@ def fit_fireball(**kwargs):
     #  a, T_exp_pow, n
     pos = np.zeros((nwalkers, ndim))
     pos[:, 0] = float(priors[0]) + 5 * np.random.randn(nwalkers)
-    pos[:, 1] = float(priors[1]) + 1000 * np.random.randn(nwalkers)
+    pos[:, 1] = float(priors[1]) + 1 * np.random.randn(nwalkers)
     pos[:, 2] = float(priors[2]) + 0.5 * np.random.randn(nwalkers)
 
     sampler = emcee.EnsembleSampler(
@@ -765,6 +765,8 @@ def fit_fireball(**kwargs):
         plt.errorbar(x_global, y_global, yerr, fmt=".", color="grey", capsize=0)
         plt.plot([], [], color="mediumorchid", alpha=0.9, label="Fireball Evaluations")
         plt.vlines(time_explode, 0, 100, color="k")
+        plt.vlines(t_min, 0, 100, color="r", label="t min")
+        plt.vlines(t_max, 0, 100, color="b", label="t max")
         plt.ylabel(r" Flux Density [$\rm \mu Jy$]")
         plt.xlabel(r"time [mjd]")
         plt.legend(frameon=False)
@@ -885,6 +887,26 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         linestyle="-",
         label="Bazin",
     )
+
+    # setting max and min for outputplot
+    baz_max = np.nanmean(bazin_results[6])
+    print("baz_max =", baz_max)
+    t_min_plot, t_max_plot = [], []
+    for x in x_range:
+        if t_min_plot == []:
+            if bazin(x, A, B, T_rise, T_fall, t0) > 0.05 * baz_max:
+                t_min_plot = x
+        if t_max_plot == [] & t_min_plot is not None:
+            if bazin(x, A, B, T_rise, T_fall, t0) < 0.05 * baz_max:
+                t_max_plot = x
+
+    if t_max_plot == []:
+        t_max_plot = np.max(x)
+
+    print("tmax tmin", t_min_plot, t_max_plot)
+
+    ax.set_xlim(t_min_plot, t_max_plot)
+    ax.set_ylim(-10, 1.05 * baz_max)
 
     # removing lightucurve after max light
 
