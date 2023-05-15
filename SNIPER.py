@@ -48,17 +48,17 @@ plt.rcParams["font.family"] = "Arial"
 config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
 MJD_minus = 800
 MJD_plus = 800
-nwalkers_bazin = 100
-nsteps_bazin = 10000
+nwalkers_bazin = 200
+nsteps_bazin = int(1e4)
 
-nwalkers_fireball = 100
-nsteps_fireball = 30000
+nwalkers_fireball = 200
+nsteps_fireball = int(1e4)
 
 progress = True
 plot = True
 
-final_run_walker_multiplier = 2
-final_run_step_multiplier = 2
+final_run_walker_multiplier = 1
+final_run_step_multiplier = 1
 
 
 parser = argparse.ArgumentParser()
@@ -106,9 +106,6 @@ if os.path.isdir(output_dir + "/combined_output/") == False:
 
 IAU_list = pd.read_csv(args.file, header=None)
 IAU_list.columns = ["IAU_NAME", "t_guess"]
-
-print(IAU_list.t_guess)
-
 
 global x_global, y_global, y_err_global
 
@@ -597,6 +594,32 @@ def fit_bazin(**kwargs):
         plt.savefig(output_dir + "/scatter/" + object + "_bazin_scatter.png")
         plt.close()
 
+    A = flat_samples[:, 0]
+    B = flat_samples[:, 1]
+    T_rise = flat_samples[:, 2]
+    T_fall = flat_samples[:, 3]
+    t0 = flat_samples[:, 4]
+
+    t_max_samples = baz_tmax(t0, T_rise, T_fall)
+    flux_max_samples = bazin(t_max_samples, A, B, T_rise, T_fall, t0)
+
+    time_max_mcmc = np.nanmean(np.array(t_max_samples))
+    time_max_mcmc_err = np.nanstd(np.array(t_max_samples))
+
+    best_params = np.zeros(ndim)
+    lower_quartile = np.zeros(ndim)
+    upper_quartile = np.zeros(ndim)
+
+    for i in range(ndim):
+        best_params[i] = np.percentile(flat_samples[:, i], [50])
+        lower_quartile[i] = np.percentile(flat_samples[:, i], [16])
+        upper_quartile[i] = np.percentile(flat_samples[:, i], [84])
+
+    A, B, T_rise, T_fall, t0 = best_params
+    A_upper, B_upper, T_rise_upper, T_fall_upper, t0_upper = upper_quartile
+    A_lower, B_lower, T_rise_lower, T_fall_lower, t0_lower = lower_quartile
+
+    if plot == True:
         # overplotting on graph
         plt.figure(dpi=300)
         inds = np.random.randint(len(flat_samples), size=100)
@@ -617,33 +640,7 @@ def fit_bazin(**kwargs):
         )
 
         plt.ylim(min(y_global) * 0.9, np.max(y_global) * 1.1)
-        A = flat_samples[:, 0]
-        B = flat_samples[:, 1]
-        T_rise = flat_samples[:, 2]
-        T_fall = flat_samples[:, 3]
-        t0 = flat_samples[:, 4]
 
-        t_max_samples = baz_tmax(t0, T_rise, T_fall)
-        flux_max_samples = bazin(t_max_samples, A, B, T_rise, T_fall, t0)
-        mcmc_flux = np.mean(np.array(flux_max_samples))
-        mcmc_flux_err = np.std(np.array(flux_max_samples))
-
-        time_max_mcmc = np.nanmean(np.array(t_max_samples))
-        time_max_mcmc_err = np.nanstd(np.array(t_max_samples))
-
-        best_params = np.zeros(ndim)
-        lower_quartile = np.zeros(ndim)
-        upper_quartile = np.zeros(ndim)
-
-        for i in range(ndim):
-            best_params[i] = np.percentile(flat_samples[:, i], [50])
-            lower_quartile[i] = np.percentile(flat_samples[:, i], [16])
-            upper_quartile[i] = np.percentile(flat_samples[:, i], [84])
-
-        A, B, T_rise, T_fall, t0 = best_params
-        A_upper, B_upper, T_rise_upper, T_fall_upper, t0_upper = upper_quartile
-        A_lower, B_lower, T_rise_lower, T_fall_lower, t0_lower = lower_quartile
-        print(f"t max = {time_max_mcmc}")
         plt.ylabel(r" Flux Density [$\rm \mu Jy$]")
         plt.xlabel(r"time [mjd]")
         plt.legend(frameon=False)
@@ -657,19 +654,19 @@ def fit_bazin(**kwargs):
         )
         plt.savefig(output_dir + "/overplot/" + object + "_bazin_overplot.png")
 
-        plt.close()
-        print("best params", best_params)
-        gc.collect()
-        return (
-            time_max_mcmc,
-            time_max_mcmc_err,
-            best_params,
-            upper_quartile,
-            lower_quartile,
-            t_max_samples,
-            flux_max_samples,
-            flat_samples,
-        )
+    plt.close()
+    print("best params", best_params)
+    gc.collect()
+    return (
+        time_max_mcmc,
+        time_max_mcmc_err,
+        best_params,
+        upper_quartile,
+        lower_quartile,
+        t_max_samples,
+        flux_max_samples,
+        flat_samples,
+    )
 
 
 def fit_fireball(**kwargs):
@@ -684,8 +681,6 @@ def fit_fireball(**kwargs):
     t_min = np.min(x_global)
     t_max = np.max(x_global)
 
-    # dispersion = np.max( ((abs(np.mean(x) - t_min)), (abs(np.mean(x) - t_max))))
-    dispersion = 50
     ndim = 3
     nwalkers, ndim = int(nwalkers), int(ndim)
     nsteps = int(int(nsteps))
@@ -693,7 +688,7 @@ def fit_fireball(**kwargs):
     #  a, T_exp_pow, n
     pos = np.zeros((nwalkers, ndim))
     pos[:, 0] = float(priors[0]) + 5 * np.random.randn(nwalkers)
-    pos[:, 1] = float(priors[1]) + 1 * np.random.randn(nwalkers)
+    pos[:, 1] = float(priors[1]) + 1000 * np.random.randn(nwalkers)
     pos[:, 2] = float(priors[2]) + 0.5 * np.random.randn(nwalkers)
 
     sampler = emcee.EnsembleSampler(
@@ -833,7 +828,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         df.MJD,
         df.uJy,
     )
-    df.drop(df[df.duJy > 80].index, inplace=True)
+    df.drop(df[df.duJy > 300].index, inplace=True)
     # df = df.dropna()
     x = np.array(df.MJD)
     if math.isnan(t_guess) is True:
@@ -857,17 +852,26 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
 
     # combined output plot
     fig, ax = plt.subplots(dpi=300)
-    ax.errorbar(x, y, yerr, color="k", linestyle="")
+    ax.errorbar(
+        x,
+        y,
+        yerr,
+        color="k",
+        linestyle="",
+        fmt=".",
+    )
 
     def_global(x, y, yerr)
 
     bazin_results = fit_bazin(
         progress=progress,
-        plot=plot,
+        plot=False,
         object=object,
         nwalkers=nwalkers_bazin,
         nsteps=nsteps_bazin,
     )
+
+    print(bazin_results)
     bazin_results = fit_bazin(
         priors=bazin_results[2],
         progress=progress,
@@ -911,7 +915,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     ax.set_ylabel(r" Flux Density [$\rm \mu Jy$]")
     ax.set_xlabel(r"time [mjd]")
 
-    ax.legend()
     ax.set_xlim(t_min_plot - 50, t_max_plot + 50)
     ax.set_ylim(-10, 1.2 * baz_max)
 
@@ -935,9 +938,9 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     first_guess = np.nanmean(bazin_results[0]) - 20
 
     fireball_results = fit_fireball(
-        priors=[np.max(y), first_guess, 2],
+        priors=[0.25 * np.max(y), first_guess, 2],
         progress=progress,
-        plot=plot,
+        plot=False,
         object=object,
         nwalkers=nwalkers_fireball,
         nsteps=nsteps_fireball,
@@ -974,6 +977,10 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     mean_flux = np.nanmean(bazin_results[4])
     std_flux = np.nanstd(bazin_results[4])
 
+    ax.vlines(t_explode, -100, 1.5 * baz_max)
+    ax.vlines(t_explode, -100, 1.5 * baz_max)
+    ax.title(object)
+    ax.legend()
     fig.savefig(output_dir + "/combined_output/" + object + ".png")
     plt.close()
 
@@ -1010,17 +1017,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
     print(f"{object} parameters")
     print("risetime ", risetime)
-    print("T_rise", T_rise)
-    print("T_rise_lower", T_rise_lower)
-    print("T_rise_upper", T_rise_upper)
-    print("T_fall", T_fall)
-    print("T_fall_lower", T_fall_lower)
-    print("T_fall_upper", T_fall_upper)
-    print("T_explode", T_explode)
-    print("T_explode_lower", T_explode_lower)
-    print("T_explode_upper", T_explode_upper)
-    print("T_max", T_max)
-    print("T_max_err", T_max_err)
 
     from IPython.display import display, Math
 
