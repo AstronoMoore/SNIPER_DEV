@@ -49,10 +49,10 @@ config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/
 MJD_minus = 800
 MJD_plus = 800
 nwalkers_bazin = 100
-nsteps_bazin = 5000
+nsteps_bazin = 10000
 
 nwalkers_fireball = 100
-nsteps_fireball = 10000
+nsteps_fireball = 30000
 
 progress = True
 plot = True
@@ -878,6 +878,10 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     )
 
     A, B, T_rise, T_fall, t0 = bazin_results[2]
+    baz_max = np.nanmean(bazin_results[6])
+    print("baz_max =", baz_max)
+    t_max_bazin = baz_tmax(t0, T_rise, T_fall)
+    print("max time =", t_max_bazin)
 
     x_range = np.linspace(np.min(x), np.max(x), 200)
     ax.plot(
@@ -889,24 +893,27 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     )
 
     # setting max and min for outputplot
-    baz_max = np.nanmean(bazin_results[6])
-    print("baz_max =", baz_max)
-    t_min_plot, t_max_plot = [], []
+    t_min_plot, t_max_plot = None, None
     for x in x_range:
-        if t_min_plot == []:
+        if t_min_plot == None:
             if bazin(x, A, B, T_rise, T_fall, t0) > 0.05 * baz_max:
                 t_min_plot = x
-        if t_max_plot == [] & t_min_plot is not None:
+                print("setting t min", t_min_plot)
+        if t_max_plot == None and (x > t_max_bazin):
             if bazin(x, A, B, T_rise, T_fall, t0) < 0.05 * baz_max:
                 t_max_plot = x
+                print("setting t max", t_max_plot)
 
-    if t_max_plot == []:
+    if t_max_plot == None:
         t_max_plot = np.max(x)
 
-    print("tmax tmin", t_min_plot, t_max_plot)
+    print("tmin tmax", t_min_plot, t_max_plot)
+    ax.set_ylabel(r" Flux Density [$\rm \mu Jy$]")
+    ax.set_xlabel(r"time [mjd]")
 
-    ax.set_xlim(t_min_plot, t_max_plot)
-    ax.set_ylim(-10, 1.05 * baz_max)
+    ax.legend()
+    ax.set_xlim(t_min_plot - 50, t_max_plot + 50)
+    ax.set_ylim(-10, 1.2 * baz_max)
 
     # removing lightucurve after max light
 
@@ -915,7 +922,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     ]
 
     lightcurve_data = lightcurve_data.loc[
-        (lightcurve_data["MJD"].astype("float64") >= baz_tmax(t0, T_rise, T_fall) - 200)
+        (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 50)
     ]
     print(f"t_max = {bazin_results[0]}")
 
@@ -925,7 +932,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         lightcurve_data["duJy"].astype(float),
     )
     def_global(x, y, yerr)
-    first_guess = np.nanmean(bazin_results[0]) - 40
+    first_guess = np.nanmean(bazin_results[0]) - 20
 
     fireball_results = fit_fireball(
         priors=[np.max(y), first_guess, 2],
