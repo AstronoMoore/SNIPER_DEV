@@ -49,13 +49,14 @@ plt.style.use("default")
 plt.rcParams["font.family"] = "Arial"
 
 config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
-MJD_minus = 800
-MJD_plus = 800
-nwalkers_bazin = int(2e1)
-nsteps_bazin = int(3e5)
+MJD_minus = 1000
+MJD_plus = 1000
+nwalkers_bazin = int(1e3)
+nsteps_bazin = int(1e4)
+flux_unc_cut = 50
 
-nwalkers_fireball = int(2e1)
-nsteps_fireball = int(4e5)
+nwalkers_fireball = int(1e3)
+nsteps_fireball = int(1e4)
 
 progress = True
 plot = True
@@ -108,7 +109,9 @@ if os.path.isdir(output_dir + "/combined_output/") == False:
 
 
 IAU_list = pd.read_csv(args.file, header=None)
-IAU_list.columns = ["IAU_NAME", "t_guess"]
+IAU_list.columns = ["IAU_NAME"]
+
+# , "t_guess"
 
 global x_global, y_global, y_err_global
 
@@ -503,12 +506,9 @@ def fit_fireball(**kwargs):
 
 SNIPER_OUTPUT = pd.DataFrame()
 
-print("starting loop")
-
 for object in tqdm(IAU_list["IAU_NAME"], leave=False):
-    t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == object, "t_guess"]
+    # t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == object, "t_guess"]
     print(f"Working on {object}")
-    print(f"t_guess = {float(t_guess)}")
     f = []
     f = config_cleaned_lc_directory + object + "/" + object + ".o.1.00days.lc.txt"
     # print(f)
@@ -539,26 +539,19 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     df = []
     df = pd.read_csv(f, delim_whitespace=True)
     df = df.filter(("MJD", "uJy", "duJy"), axis=1)
-    plt.plot(
-        df.MJD,
-        df.uJy,
-    )
-    df.drop(df[df.duJy > 300].index, inplace=True)
-    # df = df.dropna()
-    x = np.array(df.MJD)
-    if math.isnan(t_guess) is True:
-        max_y = np.argmax(savgol_filter(df.uJy, 10, 3))
-        savgol_first_guess = x[max_y]
-        t_guess = savgol_first_guess
+    df.drop(df[df.duJy > flux_unc_cut].index, inplace=True)
+    df = df.dropna()
 
-    df_cut_min = float(t_guess) - MJD_minus
-    df_cut_max = float(t_guess) + MJD_plus
-    df_new = df.dropna(how="any", axis=0)
+    # df_cut_min = float(t_guess) - MJD_minus
+    # df_cut_max = float(t_guess) + MJD_plus
+    # df_new = df.dropna(how="any", axis=0)
 
-    lightcurve_data = df_new.loc[
-        (df["MJD"].astype("float64") >= df_cut_min)
-        & (df["MJD"].astype("float64") <= df_cut_max)
-    ]
+    # lightcurve_data = df_new.loc[
+    #     (df["MJD"].astype("float64") >= df_cut_min)
+    #     & (df["MJD"].astype("float64") <= df_cut_max)
+    # ]
+
+    lightcurve_data = df
     x_global, y_global, y_err_global = (
         lightcurve_data["MJD"].astype("float64"),
         lightcurve_data["uJy"].astype("float64"),
@@ -586,15 +579,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         nwalkers=nwalkers_bazin,
         nsteps=nsteps_bazin,
     )
-
-    # bazin_results = fit_bazin(
-    #     priors=bazin_results[2],
-    #     progress=progress,
-    #     plot=plot,
-    #     object=object,
-    #     nwalkers=nwalkers_bazin * final_run_walker_multiplier,
-    #     nsteps=nsteps_bazin * final_run_step_multiplier,
-    # )
 
     A, B, T_rise, T_fall, t0 = bazin_results[2]
     baz_max = np.nanmean(bazin_results[6])
