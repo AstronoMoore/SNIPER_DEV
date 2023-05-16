@@ -49,14 +49,14 @@ plt.style.use("default")
 plt.rcParams["font.family"] = "Arial"
 
 config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
-MJD_minus = 1000
-MJD_plus = 1000
-nwalkers_bazin = int(1e3)
-nsteps_bazin = int(1e4)
-flux_unc_cut = 50
+MJD_minus = 500
+MJD_plus = 500
+nwalkers_bazin = int(1e2)
+nsteps_bazin = int(2e5)
+flux_unc_cut = 100
 
-nwalkers_fireball = int(1e3)
-nsteps_fireball = int(1e4)
+nwalkers_fireball = int(1e2)
+nsteps_fireball = int(2e5)
 
 progress = True
 plot = True
@@ -511,7 +511,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     print(f"Working on {object}")
     f = []
     f = config_cleaned_lc_directory + object + "/" + object + ".o.1.00days.lc.txt"
-    # print(f)
     cols = [
         [
             "MJD",
@@ -542,16 +541,20 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     df.drop(df[df.duJy > flux_unc_cut].index, inplace=True)
     df = df.dropna()
 
-    # df_cut_min = float(t_guess) - MJD_minus
-    # df_cut_max = float(t_guess) + MJD_plus
-    # df_new = df.dropna(how="any", axis=0)
+    time = np.array(df.MJD)
+    flux = np.array(df.uJy)
 
-    # lightcurve_data = df_new.loc[
-    #     (df["MJD"].astype("float64") >= df_cut_min)
-    #     & (df["MJD"].astype("float64") <= df_cut_max)
-    # ]
+    t_guess = time[np.argmax(savgol_filter(flux, 30, 2))]
+    print(f"An initial guess for where the SN is = {t_guess}")
 
-    lightcurve_data = df
+    df_cut_min = float(t_guess) - MJD_minus
+    df_cut_max = float(t_guess) + MJD_plus
+    df_new = df.dropna(how="any", axis=0)
+
+    lightcurve_data = df_new.loc[
+        (df["MJD"].astype("float64") >= df_cut_min)
+        & (df["MJD"].astype("float64") <= df_cut_max)
+    ]
     x_global, y_global, y_err_global = (
         lightcurve_data["MJD"].astype("float64"),
         lightcurve_data["uJy"].astype("float64"),
@@ -581,12 +584,12 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     )
 
     A, B, T_rise, T_fall, t0 = bazin_results[2]
-    baz_max = np.nanmean(bazin_results[6])
-    print("baz_max =", baz_max)
     t_max_bazin = baz_tmax(t0, T_rise, T_fall)
     print("max time =", t_max_bazin)
+    baz_max_flux = bazin(t_max_bazin, A, B, T_rise, T_fall, t0)
+    print("baz_max flux =", baz_max_flux)
 
-    x_range = np.linspace(np.min(x_global), np.max(x_global), 200)
+    x_range = np.linspace(np.min(x_global), np.max(x_global), 500)
     ax.plot(
         x_range,
         bazin(x_range, A, B, T_rise, T_fall, t0),
@@ -600,11 +603,11 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     t_min_plot, t_max_plot = None, None
     for time_variable in x_range:
         if t_min_plot == None:
-            if bazin(time_variable, A, B, T_rise, T_fall, t0) > 0.05 * baz_max:
+            if bazin(time_variable, A, B, T_rise, T_fall, t0) > 0.05 * baz_max_flux:
                 t_min_plot = time_variable
                 print("setting t min", t_min_plot)
         if t_max_plot == None and (time_variable > t_max_bazin):
-            if bazin(time_variable, A, B, T_rise, T_fall, t0) < 0.05 * baz_max:
+            if bazin(time_variable, A, B, T_rise, T_fall, t0) < 0.05 * baz_max_flux:
                 t_max_plot = time_variable
                 print("setting t max", t_max_plot)
 
@@ -616,7 +619,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
 
     ax.set_ylabel(r" Flux Density [$\rm \mu Jy$]")
     ax.set_xlabel(r"time [mjd]")
-    ax.set_ylim(-10, 1.4 * baz_max)
+    ax.set_ylim(-10, 1.4 * baz_max_flux)
 
     # removing lightcurve after max light
 
@@ -638,7 +641,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     first_guess = t_min_plot - 50
 
     fireball_results = fit_fireball(
-        priors=[0.01 * baz_max, first_guess, 2],
+        priors=[0.01 * baz_max_flux, first_guess, 2],
         progress=progress,
         plot=True,
         object=object,
@@ -682,7 +685,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     mean_flux = np.nanmean(bazin_results[4])
     std_flux = np.nanstd(bazin_results[4])
 
-    ax.vlines(bazin_max, -100, 1.5 * baz_max, linestyles="--", color="k")
+    ax.vlines(bazin_max, -100, 1.5 * baz_max_flux, linestyles="--", color="k")
     plt.text(
         bazin_max + 2,
         0.75 * (np.max(y_global)),
@@ -695,27 +698,27 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     )
 
     # Marking on T Explode
-    ax.vlines(t_explode, -100, 1.5 * baz_max, linestyles="--", color="k")
-    plt.text(
+    ax.vlines(t_explode, -100, 1.5 * baz_max_flux, linestyles="--", color="r")
+    ax.text(
         t_explode + 2,
-        0.75 * baz_max,
+        0.75 * baz_max_flux,
         r"$t_{\rm explode}$",
         rotation=90,
         fontsize=14,
-        color="gray",
+        color="r",
         alpha=0.9,
         zorder=0,
     )
 
     # Marking on T Max
-    ax.vlines(bazin_max, -100, 1.5 * baz_max, linestyles="--", color="k")
-    plt.text(
+    ax.vlines(bazin_max, -100, 1.5 * baz_max_flux, linestyles="--", color="b")
+    ax.text(
         bazin_max + 2,
-        0.75 * baz_max,
+        0.15 * baz_max_flux,
         r"$t_{\rm max}$",
         rotation=90,
         fontsize=14,
-        color="gray",
+        color="b",
         alpha=0.9,
         zorder=0,
     )
