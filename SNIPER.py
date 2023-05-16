@@ -28,6 +28,9 @@ from mpi4py import MPI
 from mpipool import MPIPool
 from emcee.autocorr import AutocorrError, function_1d
 
+
+# https://stackoverflow.com/questions/74551603/emcee-issue-mpi-while-sharing-an-executable-file
+
 # from multiprocessing import Pool
 from schwimmbad import MPIPool
 
@@ -48,11 +51,11 @@ plt.rcParams["font.family"] = "Arial"
 config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
 MJD_minus = 800
 MJD_plus = 800
-nwalkers_bazin = 20
-nsteps_bazin = int(1e4)
+nwalkers_bazin = int(2e1)
+nsteps_bazin = int(3e5)
 
-nwalkers_fireball = 2000
-nsteps_fireball = int(1e4)
+nwalkers_fireball = int(2e1)
+nsteps_fireball = int(4e5)
 
 progress = True
 plot = True
@@ -192,13 +195,13 @@ def chisq_fireball(p):
     )
 
 
-def lnpriorline_fireball(p, t_min, t_max):
+def lnpriorline_fireball(p):
     a, T_exp_pow, n = p
     if (
         1 < a < 0.2 * np.max(y_global)
         and 1.5 < n < 2.5
-        and T_exp_pow > t_min
-        and T_exp_pow < t_max
+        and T_exp_pow > np.min(x_global)
+        and T_exp_pow < np.max(x_global)
     ):
         return 0
     return -np.inf
@@ -209,8 +212,8 @@ def lnlikeline_fireball(p):
     return -0.5 * chisq
 
 
-def lnprobline_fireball(p, t_min, t_max):
-    lp = lnpriorline_fireball(p, t_min, t_max)
+def lnprobline_fireball(p):
+    lp = lnpriorline_fireball(p)
     if not np.isfinite(lp):
         return -np.inf
     ln_like = +lnlikeline_fireball(p)
@@ -243,7 +246,7 @@ def flux_to_ABmag(flux):
 
 
 def fit_bazin(**kwargs):
-    priors = kwargs.get("priors", [0.1 * np.max(y_global), 0, 5, 10, np.mean(x_global)])
+    priors = kwargs.get("priors", [0.1 * np.max(y_global), 0, 1, 2, np.mean(x_global)])
     # priors = np.array(priors)
     nwalkers = kwargs.get("nwalkers", int(100))
     nsteps = kwargs.get("nsteps", int(500))
@@ -258,20 +261,20 @@ def fit_bazin(**kwargs):
     # A, B, T_rise, T_fall, t0
 
     pos = np.zeros((nwalkers, ndim))
-    pos1 = float(priors[0]) + 10 * np.random.rand(nwalkers)
-    pos2 = float(priors[1]) + 1 * np.random.rand(nwalkers)
-    pos3 = float(priors[2]) + 2 * np.random.rand(nwalkers)
-    pos4 = float(priors[3]) + 2 * np.random.rand(nwalkers)
-    pos5 = float(priors[4]) + 5 * np.random.rand(nwalkers)
+    pos1 = float(priors[0]) + 10 * np.random.randn(nwalkers)
+    pos2 = float(priors[1]) + 1 * np.random.randn(nwalkers)
+    pos3 = float(priors[2]) + 2 * np.random.randn(nwalkers)
+    pos4 = float(priors[3]) + 2 * np.random.randn(nwalkers)
+    pos5 = float(priors[4]) + 5 * np.random.randn(nwalkers)
     pos = [pos1, pos2, pos3, pos4, pos5]
     pos = np.transpose(pos)
 
     sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
     sampler.run_mcmc(pos, nsteps, progress=progress)
 
-    #    with MPIPool() as pool:
-    #        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
-    #        sampler.run_mcmc(pos, nsteps, progress=True)
+    # with MPIPool() as pool:
+    #     sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
+    #     sampler.run_mcmc(pos, nsteps, progress=True)
 
     samples = sampler.get_chain()
     flat_samples = sampler.get_chain(
@@ -341,7 +344,7 @@ def fit_bazin(**kwargs):
         # overplotting on graph
         plt.figure(dpi=300)
         inds = np.random.randint(len(flat_samples), size=100)
-        x0 = np.linspace(np.min(x), np.max(x), 300)
+        x0 = np.linspace(np.min(x_global), np.max(x_global), 300)
         for ind in inds:
             sample = flat_samples[ind]
             plt.plot(x0, bazin(x0, *sample), "deepskyblue", alpha=0.1)
@@ -357,7 +360,8 @@ def fit_bazin(**kwargs):
             label="ATLAS o-band",
         )
 
-        plt.ylim(min(y_global) * 0.9, np.max(y_global) * 1.1)
+        plt.ylim(np.min(y_global) * 0.9, np.max(y_global) * 1.1)
+        plt.xlim(np.min(x_global) * 0.999, np.max(x_global) * 1.001)
 
         plt.ylabel(r" Flux Density [$\rm \mu Jy$]")
         plt.xlabel(r"time [mjd]")
@@ -396,29 +400,24 @@ def fit_fireball(**kwargs):
     plot = kwargs.get("plot", False)
     object = kwargs.get("object", "")
 
-    t_min = np.min(x_global)
-    t_max = np.max(x_global)
-
     ndim = 3
     nwalkers, ndim = int(nwalkers), int(ndim)
     nsteps = int(int(nsteps))
 
     #  a, T_exp_pow, n
     pos = np.zeros((nwalkers, ndim))
-    pos[:, 0] = float(priors[0]) + 5 * np.random.rand(nwalkers)
-    pos[:, 1] = float(priors[1]) + 500 * np.random.rand(nwalkers)
-    pos[:, 2] = float(priors[2]) + 0.1 * np.random.rand(nwalkers)
+    pos[:, 0] = float(priors[0]) + 5 * np.random.randn(nwalkers)
+    pos[:, 1] = float(priors[1]) + 500 * np.random.randn(nwalkers)
+    pos[:, 2] = float(priors[2]) + 0.1 * np.random.randn(nwalkers)
 
-    sampler = emcee.EnsembleSampler(
-        nwalkers, ndim, lnprobline_fireball, args=(t_min, t_max)
-    )
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_fireball)
     sampler.run_mcmc(pos, nsteps, progress=progress)
 
     # with MPIPool() as pool:
-    #    sampler = emcee.EnsembleSampler(
-    #        nwalkers, ndim, lnprobline_fireball, args=(t_min, t_max), pool=pool
-    #    )
-    #    sampler.run_mcmc(pos, nsteps, progress=True)
+    #     sampler = emcee.EnsembleSampler(
+    #         nwalkers, ndim, lnprobline_fireball, args=(t_min, t_max), pool=pool
+    #     )
+    #     sampler.run_mcmc(pos, nsteps, progress=True)
 
     samples = sampler.get_chain()
     flat_samples = sampler.get_chain(
@@ -475,11 +474,9 @@ def fit_fireball(**kwargs):
             label="rising points",
         )
         plt.ylim(-10, np.max(y_global))
-        plt.errorbar(x_global, y_global, yerr, fmt=".", color="grey", capsize=0)
+        plt.errorbar(x_global, y_global, y_err_global, fmt=".", color="grey", capsize=0)
         plt.plot([], [], color="mediumorchid", alpha=0.9, label="Fireball Evaluations")
         plt.vlines(time_explode, 0, 100, color="k")
-        plt.vlines(t_min, 0, 100, color="r", label="t min")
-        plt.vlines(t_max, 0, 100, color="b", label="t max")
         plt.ylabel(r" Flux Density [$\rm \mu Jy$]")
         plt.xlabel(r"time [mjd]")
         plt.legend(frameon=False)
@@ -630,9 +627,12 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     if t_max_plot == None:
         t_max_plot = np.max(x_global)
 
+    if t_min_plot == None:
+        t_min_plot = t_max_bazin - 600
+
     ax.set_ylabel(r" Flux Density [$\rm \mu Jy$]")
     ax.set_xlabel(r"time [mjd]")
-    ax.set_ylim(-10, 1.2 * baz_max)
+    ax.set_ylim(-10, 1.4 * baz_max)
 
     # removing lightcurve after max light
 
@@ -641,20 +641,20 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     ]
 
     lightcurve_data = lightcurve_data.loc[
-        (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 200)
+        (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 500)
     ]
-    print(f"t_max = {bazin_results[0]}")
+    print(f"t_max = {t_max_bazin}")
 
     x_global, y_global, y_err_global = (
         lightcurve_data["MJD"].astype(float),
         lightcurve_data["uJy"].astype(float),
         lightcurve_data["duJy"].astype(float),
     )
-    def_global(x_global, y_global, y_err_global)s
-    first_guess = np.nanmean(bazin_results[0]) - 20
+    def_global(x_global, y_global, y_err_global)
+    first_guess = t_min_plot - 50
 
     fireball_results = fit_fireball(
-        priors=[0.25 * np.max(y_global), first_guess, 2],
+        priors=[0.01 * baz_max, first_guess, 2],
         progress=progress,
         plot=True,
         object=object,
@@ -670,7 +670,9 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     #     nwalkers=nwalkers_fireball * final_run_walker_multiplier,
     #     nsteps=nsteps_fireball * final_run_step_multiplier,
     # )
-    x_range = np.linspace(np.min(x_global), baz_tmax(t0, T_rise, T_fall), 200) # changing xrange to plot rise 
+    x_range = np.linspace(
+        np.min(x_global), baz_tmax(t0, T_rise, T_fall), 200
+    )  # changing xrange to plot rise
 
     a, T_exp_pow, n = fireball_results[0]
     if t_min_plot == None:
@@ -707,10 +709,12 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         alpha=0.9,
         zorder=0,
     )
+
+    # Marking on T Explode
     ax.vlines(t_explode, -100, 1.5 * baz_max, linestyles="--", color="k")
     plt.text(
         t_explode + 2,
-        0.75 * (np.max(y_global)),
+        0.75 * baz_max,
         r"$t_{\rm explode}$",
         rotation=90,
         fontsize=14,
@@ -718,6 +722,20 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         alpha=0.9,
         zorder=0,
     )
+
+    # Marking on T Max
+    ax.vlines(bazin_max, -100, 1.5 * baz_max, linestyles="--", color="k")
+    plt.text(
+        bazin_max + 2,
+        0.75 * baz_max,
+        r"$t_{\rm max}$",
+        rotation=90,
+        fontsize=14,
+        color="gray",
+        alpha=0.9,
+        zorder=0,
+    )
+
     ax.set_title(object)
     ax.legend()
     ax.set_xlim(t_min_plot - 50, t_max_plot + 50)
@@ -725,7 +743,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     fig.savefig(output_dir + "/combined_output/" + object + ".png")
     plt.close()
 
-    # time_max_mcmc,time_max_mcmc_err,best_params,upper_quartile,lower_quartile,t_max_samples,flux_max_samples,t_samples,
     T_rise = bazin_results[2][2]
     T_rise_lower = bazin_results[2][2] - bazin_results[3][2]
     T_rise_upper = bazin_results[2][2] - bazin_results[4][2]
