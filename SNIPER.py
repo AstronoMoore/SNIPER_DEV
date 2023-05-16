@@ -48,10 +48,10 @@ plt.rcParams["font.family"] = "Arial"
 config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
 MJD_minus = 800
 MJD_plus = 800
-nwalkers_bazin = 200
+nwalkers_bazin = 20
 nsteps_bazin = int(1e4)
 
-nwalkers_fireball = 200
+nwalkers_fireball = 2000
 nsteps_fireball = int(1e4)
 
 progress = True
@@ -129,286 +129,6 @@ def Lambresttoobs(lambda_rest, Z):
     return lambda_obs
 
 
-def round_up(n, decimals=0):
-    multiplier = 10**decimals
-    return math.ceil(n * multiplier) / multiplier
-
-
-def round_down(n, decimals=0):
-    multiplier = 10**decimals
-    return math.floor(n * multiplier) / multiplier
-
-
-def janks_to_mag(jank):
-    mag = -2.5 * np.log10((jank * 1e-6) / 3631)
-    return mag
-
-
-def magtoflux(mag, band):
-    if band == "R":
-        wavelength = 6580.0
-
-    if band == "r":
-        wavelength = 6170.0
-
-    if band == "g":
-        wavelength = 4754.0
-
-    if band == "B":
-        wavelength = 4450.0
-
-    if band == "i":
-        wavelength = 8000.0
-
-    if band == "z":
-        wavelength = 9665.0
-
-    if band == "u":
-        wavelength = 3580.0
-
-    if band == "ATLAS_o":
-        wavelength = 6866.26
-
-    if band == "ATLAS_c":
-        wavelength = 5408.66
-
-    if band == "PS1_W":
-        wavelength = 6579
-
-    print(wavelength)
-    flux = ((2.99 * 10**18) / (wavelength**2)) * 10 ** (-((mag + 48.60) / 2.5))
-    return (wavelength, flux)
-
-
-def tardis_sim(config, luminosity, time, z):
-    tardis_config = config
-    tardis_config.supernova.luminosity_requested = luminosity
-    tardis_config.supernova.time_explosion = time
-    sim = run_tardis(
-        tardis_config,
-        show_convergence_plots=False,
-        show_progress_bars=True,
-        virtual_packet_logging=True,
-    )
-    spectrum = sim.runner.spectrum
-    spectrum_virtual = sim.runner.spectrum_virtual
-    tardisflux_virtual = spectrum.luminosity_to_flux(
-        spectrum_virtual.luminosity_density_lambda, cosmo.luminosity_distance(z)
-    )
-    # spectrum_integrated = sim.runner.spectrum_integrated
-    # tardisflux_integrated = spectrum.luminosity_to_flux(spectrum_integrated.luminosity_density_lambda,cosmo.luminosity_distance(z))
-    wavelength = spectrum.wavelength
-    flux = tardisflux_virtual
-    return (wavelength, flux, sim)
-
-
-def NTT_OBS(input_spec):
-    bin_width = 7
-    new_disp_grid = (
-        np.arange(
-            np.min(input_spec.spectral_axis.value),
-            np.max(input_spec.spectral_axis.value),
-            bin_width,
-        )
-        * u.AA
-    )
-    fluxcon = FluxConservingResampler(extrapolation_treatment="zero_fill")
-    binned_spec = fluxcon(input_spec, new_disp_grid)
-
-    NTT_B = SpectralElement.from_file("NTT_filters/NTT_B.dat")
-    NTT_V = SpectralElement.from_file("NTT_filters/NTT_V.dat")
-    NTT_R = SpectralElement.from_file("NTT_filters/NTT_R.dat")
-    NTT_i = SpectralElement.from_file("NTT_filters/NTT_Gunn_i.dat")
-
-    obs_B = Observation(binned_spec, NTT_B, force="extrap")
-    flux_B = synphot.units.convert_flux(obs_B.binset, obs_B.binflux, "flam")
-
-    obs_V = Observation(binned_spec, NTT_V, force="extrap")
-    flux_V = synphot.units.convert_flux(obs_V.binset, obs_V.binflux, "flam")
-
-    obs_R = Observation(binned_spec, NTT_R, force="extrap")
-    flux_R = synphot.units.convert_flux(obs_R.binset, obs_R.binflux, "flam")
-
-    obs_i = Observation(binned_spec, NTT_i, force="extrap")
-    flux_i = synphot.units.convert_flux(obs_i.binset, obs_i.binflux, "flam")
-
-    # mag_B = obs_B.effstim()
-    f, ax = plt.subplots(dpi=300)
-    ax.plot(binned_spec.wavelength, binned_spec.flux)
-    ax.plot(obs_B.binset, flux_B, color="b", label="B")
-    ax.plot(obs_V.binset, flux_V, color="violet", label="V")
-    ax.plot(obs_R.binset, flux_R, color="r", label="R")
-    ax.plot(obs_i.binset, flux_i, color="grey", label="i")
-    ax.legend()
-    ax.set_xlim(
-        np.min(input_spec.spectral_axis.value) * 0.9,
-        np.max(input_spec.spectral_axis.value) * 1.1,
-    )
-
-    print("\n NTT magnitudes \n")
-
-    print(f" Effstim B filter =  {obs_B.effstim(u.ABmag):.3f}")
-    print(f" Effstim V filter = {obs_V.effstim(u.ABmag):.3f} ")
-    print(f" Effstim R filter = {obs_R.effstim(u.ABmag):.3f} ")
-    print(f" Effstim i filter = {obs_i.effstim(u.ABmag):.3f} ")
-
-    return 0
-
-
-cwd = os.getcwd()
-
-
-def ATLAS_OBS(input_spec):
-    binned_spec = input_spec
-
-    for line in input_spec.wavelength.value:
-        if math.isnan(line) == True:
-            print("Found a nan in wavelength - this will cause an error")
-
-    for line in input_spec.flux.value:
-        if math.isnan(line) == True:
-            print("Found a nan in flux - this will cause an error")
-
-    ATLAS_c = SpectralElement.from_file("Misc_Atlas.cyan.dat")
-    ATLAS_o = SpectralElement.from_file("Misc_Atlas.orange.dat")
-
-    f, ax = plt.subplots(dpi=300)
-    ax.plot(binned_spec.wavelength, binned_spec.flux, label="spectrum", color="k")
-
-    try:
-        obs_c = Observation(binned_spec, ATLAS_c, force="extrap")
-        flux_c = synphot.units.convert_flux(obs_c.binset, obs_c.binflux, "flam")
-        print(f"Synthetic ATLAS c filter \t=\t {obs_c.effstim(u.ABmag):.3f} ")
-        ax.plot(obs_c.binset, flux_c, color="cyan", label="c")
-    except Exception:
-        print("No ATLAS c overlap!")
-        pass
-
-    try:
-        obs_o = Observation(binned_spec, ATLAS_o, force="extrap")
-        flux_o = synphot.units.convert_flux(obs_o.binset, obs_o.binflux, "flam")
-        ax.plot(obs_o.binset, flux_o, color="orange", label="o")
-        print(f"Synthetic ATLAS o filter \t=\t {obs_o.effstim(u.ABmag):.3f} ")
-    except Exception:
-        print("No ATLAS o overlap!")
-        pass
-
-    ax.set_xlabel("Observed Wavelength " + r"$\AA$")
-    ax.set_ylabel("Flux")
-    ax.legend()
-    ax.set_xlim(
-        np.min(input_spec.spectral_axis.value) * 0.9,
-        np.max(input_spec.spectral_axis.value) * 1.1,
-    )
-    return 0
-
-
-def PST_OBS(input_spec):
-    cwd = os.getcwd()
-
-    # binned_spec = input_spec
-    for line in input_spec.wavelength.value:
-        if math.isnan(line) == True:
-            print("Found a nan in wavelength - this will cause an error")
-
-    for line in input_spec.flux.value:
-        if math.isnan(line) == True:
-            print("Found a nan in flux - this will cause an error")
-
-    binned_spec = input_spec
-
-    PST_g = SpectralElement.from_file(cwd + "/PST_filters/PAN-STARRS_PS1.z.dat")
-    PST_r = SpectralElement.from_file(cwd + "/PST_filters/PAN-STARRS_PS1.r.dat")
-    PST_w = SpectralElement.from_file(cwd + "/PST_filters/PAN-STARRS_PS1.w.dat")
-    PST_open = SpectralElement.from_file(cwd + "/PST_filters/PAN-STARRS_PS1.open.dat")
-    PST_i = SpectralElement.from_file(cwd + "/PST_filters/PAN-STARRS_PS1.i.dat")
-    PST_z = SpectralElement.from_file(cwd + "/PST_filters/PAN-STARRS_PS1.z.dat")
-    PST_y = SpectralElement.from_file(cwd + "/PST_filters/PAN-STARRS_PS1.y.dat")
-
-    f, ax = plt.subplots(dpi=300)
-    ax.plot(binned_spec.wavelength, binned_spec.flux, label="Spectrum")
-
-    print("\n Pan-STARRS magnitudes \n")
-    # g-band
-    obs_g = Observation(binned_spec, PST_g, force="extrap")
-
-    try:
-        obs_g = Observation(binned_spec, PST_g, force="extrap")
-        flux_g = synphot.units.convert_flux(obs_g.binset, obs_g.binflux, "flam")
-        print(flux_g)
-        print(f"Synthetic PST g filter \t=\t  {obs_g.effstim(u.ABmag):.3f}")
-        ax.plot(obs_g.binset, flux_g, color="b", label="g")
-    except Exception:
-        pass
-
-    # r-band
-    try:
-        obs_r = Observation(binned_spec, PST_r, force="extrap")
-        flux_r = synphot.units.convert_flux(obs_r.binset, obs_r.binflux, "flam")
-        print(f"Synthetic PST r filter \t=\t  {obs_r.effstim(u.ABmag):.3f} ")
-        ax.plot(obs_r.binset, flux_r, color="r", label="r")
-    except Exception:
-        pass
-
-    # w-band
-    try:
-        obs_w = Observation(binned_spec, PST_w, force="extrap")
-        flux_w = synphot.units.convert_flux(obs_w.binset, obs_w.binflux, "flam")
-        print(f"Synthetic PST w filter \t=\t  {obs_w.effstim(u.ABmag):.3f} ")
-        ax.plot(obs_w.binset, flux_w, color="grey", label="w")
-    except Exception:
-        pass
-
-    # Open
-    try:
-        obs_open = Observation(binned_spec, PST_open, force="extrap")
-        flux_open = synphot.units.convert_flux(
-            obs_open.binset, obs_open.binflux, "flam"
-        )
-        print(f"Synthetic PST open \t=\t {obs_open.effstim(u.ABmag):.3f} ")
-        ax.plot(obs_open.binset, flux_open, color="yellow", label="open")
-    except Exception:
-        pass
-
-    # i-band
-    try:
-        obs_i = Observation(binned_spec, PST_i, force="extrap")
-        flux_i = synphot.units.convert_flux(obs_i.binset, obs_i.binflux, "flam")
-        print(f"Synthetic PST i filter \t=\t  {obs_i.effstim(u.ABmag):.3f} ")
-        ax.plot(obs_i.binset, flux_i, color="violet", label="i")
-    except Exception:
-        pass
-
-    # z-band
-    try:
-        obs_z = Observation(binned_spec, PST_z, force="extrap")
-        flux_z = synphot.units.convert_flux(obs_z.binset, obs_z.binflux, "flam")
-        print(f"Synthetic PST z filter \t=\t {obs_z.effstim(u.ABmag):.3f} ")
-        ax.plot(obs_z.binset, flux_z, color="green", label="z")
-    except Exception:
-        pass
-
-    # y-band
-    try:
-        obs_y = Observation(binned_spec, PST_y, force="extrap")
-        flux_y = synphot.units.convert_flux(obs_y.binset, obs_y.binflux, "flam")
-        print(f"Synthetic PST y filter \t=\t {obs_y.effstim(u.ABmag):.3f} ")
-        ax.plot(obs_y.binset, flux_y, color="brown", label="y")
-    except Exception:
-        print("No PST y overlap")
-        pass
-
-    ax.set_xlabel("Observed Wavelength [Angstrom]")
-    ax.set_ylabel("Flux")
-    ax.legend()
-    ax.set_xlim(
-        np.min(input_spec.spectral_axis.value) * 0.9,
-        np.max(input_spec.spectral_axis.value) * 1.1,
-    )
-
-    return 0
-
-
 def bazin(t, A, B, T_rise, T_fall, t0):
     quoitent = A * np.exp(-(t - t0) / T_fall)
     divisor = 1 + np.exp(-(t - t0) / T_rise)
@@ -474,7 +194,12 @@ def chisq_fireball(p):
 
 def lnpriorline_fireball(p, t_min, t_max):
     a, T_exp_pow, n = p
-    if 1 < a < 100 * np.max(y_global) and t_min < T_exp_pow < t_max and 1.5 < n < 2.5:
+    if (
+        1 < a < 0.2 * np.max(y_global)
+        and 1.5 < n < 2.5
+        and T_exp_pow > t_min
+        and T_exp_pow < t_max
+    ):
         return 0
     return -np.inf
 
@@ -492,13 +217,6 @@ def lnprobline_fireball(p, t_min, t_max):
     if math.isnan(ln_like):
         return -np.inf
     return lp + ln_like
-
-
-def bazin(x, A, B, T_rise, T_fall, t0):
-    quoitent = A * np.exp(-(x - t0) / T_fall)
-    divisor = 1 + np.exp(-(x - t0) / T_rise)
-    constant = B
-    return (quoitent / divisor) + constant
 
 
 def baz_tmax(t0, T_rise, T_fall):
@@ -525,7 +243,7 @@ def flux_to_ABmag(flux):
 
 
 def fit_bazin(**kwargs):
-    priors = kwargs.get("priors", [0.5 * np.max(y_global), 0, 5, 10, np.mean(x_global)])
+    priors = kwargs.get("priors", [0.1 * np.max(y_global), 0, 5, 10, np.mean(x_global)])
     # priors = np.array(priors)
     nwalkers = kwargs.get("nwalkers", int(100))
     nsteps = kwargs.get("nsteps", int(500))
@@ -535,16 +253,16 @@ def fit_bazin(**kwargs):
 
     ndim = 5
     nwalkers, ndim = int(nwalkers), int(5)
-    nsteps = int(int(nsteps))
+    nsteps = int(nsteps)
     # pos = priors + 1 * np.random.randn(nwalkers, ndim)
     # A, B, T_rise, T_fall, t0
 
     pos = np.zeros((nwalkers, ndim))
-    pos1 = float(priors[0]) + 10 * np.random.randn(nwalkers)
-    pos2 = float(priors[1]) + 1 * np.random.randn(nwalkers)
-    pos3 = float(priors[2]) + 5 * np.random.randn(nwalkers)
-    pos4 = float(priors[3]) + 10 * np.random.randn(nwalkers)
-    pos5 = float(priors[4]) + 5 * np.random.randn(nwalkers)
+    pos1 = float(priors[0]) + 10 * np.random.rand(nwalkers)
+    pos2 = float(priors[1]) + 1 * np.random.rand(nwalkers)
+    pos3 = float(priors[2]) + 2 * np.random.rand(nwalkers)
+    pos4 = float(priors[3]) + 2 * np.random.rand(nwalkers)
+    pos5 = float(priors[4]) + 5 * np.random.rand(nwalkers)
     pos = [pos1, pos2, pos3, pos4, pos5]
     pos = np.transpose(pos)
 
@@ -670,7 +388,7 @@ def fit_bazin(**kwargs):
 
 
 def fit_fireball(**kwargs):
-    priors = kwargs.get("priors", [100, np.mean(x_global), 2])
+    priors = kwargs.get("priors", [1, np.mean(x_global), 2])
     # print(f'No priors given = assumning {priors}')
     nwalkers = kwargs.get("nwalkers", int(1000))
     nsteps = kwargs.get("nsteps", int(5000))
@@ -687,9 +405,9 @@ def fit_fireball(**kwargs):
 
     #  a, T_exp_pow, n
     pos = np.zeros((nwalkers, ndim))
-    pos[:, 0] = float(priors[0]) + 5 * np.random.randn(nwalkers)
-    pos[:, 1] = float(priors[1]) + 1000 * np.random.randn(nwalkers)
-    pos[:, 2] = float(priors[2]) + 0.5 * np.random.randn(nwalkers)
+    pos[:, 0] = float(priors[0]) + 5 * np.random.rand(nwalkers)
+    pos[:, 1] = float(priors[1]) + 500 * np.random.rand(nwalkers)
+    pos[:, 2] = float(priors[2]) + 0.1 * np.random.rand(nwalkers)
 
     sampler = emcee.EnsembleSampler(
         nwalkers, ndim, lnprobline_fireball, args=(t_min, t_max)
@@ -844,42 +562,42 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         (df["MJD"].astype("float64") >= df_cut_min)
         & (df["MJD"].astype("float64") <= df_cut_max)
     ]
-    x, y, yerr = (
+    x_global, y_global, y_err_global = (
         lightcurve_data["MJD"].astype("float64"),
         lightcurve_data["uJy"].astype("float64"),
         lightcurve_data["duJy"].astype("float64"),
     )
+    def_global(x_global, y_global, y_err_global)
 
     # combined output plot
     fig, ax = plt.subplots(dpi=300)
     ax.errorbar(
-        x,
-        y,
-        yerr,
+        x_global,
+        y_global,
+        y_err_global,
         color="k",
         linestyle="",
         fmt=".",
     )
 
-    def_global(x, y, yerr)
+    def_global(x_global, y_global, y_err_global)
 
     bazin_results = fit_bazin(
         progress=progress,
-        plot=False,
+        plot=True,
         object=object,
         nwalkers=nwalkers_bazin,
         nsteps=nsteps_bazin,
     )
 
-    print(bazin_results)
-    bazin_results = fit_bazin(
-        priors=bazin_results[2],
-        progress=progress,
-        plot=plot,
-        object=object,
-        nwalkers=nwalkers_bazin * final_run_walker_multiplier,
-        nsteps=nsteps_bazin * final_run_step_multiplier,
-    )
+    # bazin_results = fit_bazin(
+    #     priors=bazin_results[2],
+    #     progress=progress,
+    #     plot=plot,
+    #     object=object,
+    #     nwalkers=nwalkers_bazin * final_run_walker_multiplier,
+    #     nsteps=nsteps_bazin * final_run_step_multiplier,
+    # )
 
     A, B, T_rise, T_fall, t0 = bazin_results[2]
     baz_max = np.nanmean(bazin_results[6])
@@ -887,82 +605,83 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     t_max_bazin = baz_tmax(t0, T_rise, T_fall)
     print("max time =", t_max_bazin)
 
-    x_range = np.linspace(np.min(x), np.max(x), 200)
+    x_range = np.linspace(np.min(x_global), np.max(x_global), 200)
     ax.plot(
         x_range,
         bazin(x_range, A, B, T_rise, T_fall, t0),
         color="blue",
         linestyle="-",
         label="Bazin",
+        alpha=0.7,
     )
 
     # setting max and min for outputplot
     t_min_plot, t_max_plot = None, None
-    for x in x_range:
+    for time_variable in x_range:
         if t_min_plot == None:
-            if bazin(x, A, B, T_rise, T_fall, t0) > 0.05 * baz_max:
-                t_min_plot = x
+            if bazin(time_variable, A, B, T_rise, T_fall, t0) > 0.05 * baz_max:
+                t_min_plot = time_variable
                 print("setting t min", t_min_plot)
-        if t_max_plot == None and (x > t_max_bazin):
-            if bazin(x, A, B, T_rise, T_fall, t0) < 0.05 * baz_max:
-                t_max_plot = x
+        if t_max_plot == None and (time_variable > t_max_bazin):
+            if bazin(time_variable, A, B, T_rise, T_fall, t0) < 0.05 * baz_max:
+                t_max_plot = time_variable
                 print("setting t max", t_max_plot)
 
     if t_max_plot == None:
-        t_max_plot = np.max(x)
+        t_max_plot = np.max(x_global)
 
-    print("tmin tmax", t_min_plot, t_max_plot)
     ax.set_ylabel(r" Flux Density [$\rm \mu Jy$]")
     ax.set_xlabel(r"time [mjd]")
-
-    ax.set_xlim(t_min_plot - 50, t_max_plot + 50)
     ax.set_ylim(-10, 1.2 * baz_max)
 
-    # removing lightucurve after max light
+    # removing lightcurve after max light
 
     lightcurve_data = lightcurve_data.loc[
         (lightcurve_data["MJD"].astype("float64") <= baz_tmax(t0, T_rise, T_fall))
     ]
 
     lightcurve_data = lightcurve_data.loc[
-        (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 50)
+        (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 200)
     ]
     print(f"t_max = {bazin_results[0]}")
 
-    x, y, yerr = (
+    x_global, y_global, y_err_global = (
         lightcurve_data["MJD"].astype(float),
         lightcurve_data["uJy"].astype(float),
         lightcurve_data["duJy"].astype(float),
     )
-    def_global(x, y, yerr)
+    def_global(x_global, y_global, y_err_global)s
     first_guess = np.nanmean(bazin_results[0]) - 20
 
     fireball_results = fit_fireball(
-        priors=[0.25 * np.max(y), first_guess, 2],
+        priors=[0.25 * np.max(y_global), first_guess, 2],
         progress=progress,
-        plot=False,
+        plot=True,
         object=object,
         nwalkers=nwalkers_fireball,
         nsteps=nsteps_fireball,
     )
 
-    fireball_results = fit_fireball(
-        priors=fireball_results[0],
-        progress=progress,
-        plot=plot,
-        object=object,
-        nwalkers=nwalkers_fireball * final_run_walker_multiplier,
-        nsteps=nsteps_fireball * final_run_step_multiplier,
-    )
-    x_range = np.linspace(np.min(x), baz_tmax(t0, T_rise, T_fall), 200)
+    # fireball_results = fit_fireball(
+    #     priors=fireball_results[0],
+    #     progress=progress,
+    #     plot=plot,
+    #     object=object,
+    #     nwalkers=nwalkers_fireball * final_run_walker_multiplier,
+    #     nsteps=nsteps_fireball * final_run_step_multiplier,
+    # )
+    x_range = np.linspace(np.min(x_global), baz_tmax(t0, T_rise, T_fall), 200) # changing xrange to plot rise 
 
     a, T_exp_pow, n = fireball_results[0]
+    if t_min_plot == None:
+        t_min_plot = T_exp_pow - 30
     ax.plot(
         x_range,
         rise_mjd_fit(x_range, a, T_exp_pow, n),
         color="red",
         linestyle="-",
         label="fireball",
+        alpha=0.7,
     )
 
     bazin_max = bazin_results[0]
@@ -977,10 +696,32 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
     mean_flux = np.nanmean(bazin_results[4])
     std_flux = np.nanstd(bazin_results[4])
 
-    ax.vlines(t_explode, -100, 1.5 * baz_max)
-    ax.vlines(t_explode, -100, 1.5 * baz_max)
-    ax.title(object)
+    ax.vlines(bazin_max, -100, 1.5 * baz_max, linestyles="--", color="k")
+    plt.text(
+        bazin_max + 2,
+        0.75 * (np.max(y_global)),
+        r"$t_{\rm max}$",
+        rotation=90,
+        fontsize=14,
+        color="gray",
+        alpha=0.9,
+        zorder=0,
+    )
+    ax.vlines(t_explode, -100, 1.5 * baz_max, linestyles="--", color="k")
+    plt.text(
+        t_explode + 2,
+        0.75 * (np.max(y_global)),
+        r"$t_{\rm explode}$",
+        rotation=90,
+        fontsize=14,
+        color="gray",
+        alpha=0.9,
+        zorder=0,
+    )
+    ax.set_title(object)
     ax.legend()
+    ax.set_xlim(t_min_plot - 50, t_max_plot + 50)
+
     fig.savefig(output_dir + "/combined_output/" + object + ".png")
     plt.close()
 
