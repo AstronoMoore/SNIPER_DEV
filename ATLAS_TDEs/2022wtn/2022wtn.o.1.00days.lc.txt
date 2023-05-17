@@ -1678,7 +1678,6 @@
 58998.5      0      0          0 8388608          NaN          NaN          NaN         NaN      NaN       NaN      NaN
 58999.5      0      0          0 8388608          NaN          NaN          NaN         NaN      NaN       NaN      NaN
 59000.5      0      0          0 8388608          NaN          NaN          NaN         NaN      NaN       NaN      NaN
-59001.5      0      1          0    8192 59001.605728  9278.000000    31.678037         NaN      NaN 13.981364 0.003707
 59002.5      0      0          0 8388608          NaN          NaN          NaN         NaN      NaN       NaN      NaN
 59003.5      0      0          0 8388608          NaN          NaN          NaN         NaN      NaN       NaN      NaN
 59004.5      0      4          0       0 59004.564798     8.809755    15.657649   17.802153 0.325137 19.533751      NaN

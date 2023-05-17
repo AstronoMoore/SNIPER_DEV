@@ -52,11 +52,11 @@ config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/
 MJD_minus = 300
 MJD_plus = 200
 nwalkers_bazin = int(1e2)
-nsteps_bazin = int(1e4)
+nsteps_bazin = int(1e5)
 flux_unc_cut = 100
 
 nwalkers_fireball = int(1e2)
-nsteps_fireball = int(1e4)
+nsteps_fireball = int(1e5)
 
 progress = True
 plot = True
