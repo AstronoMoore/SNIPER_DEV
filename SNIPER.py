@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 from mpi4py import MPI
 from mpipool import MPIPool
 from emcee.autocorr import AutocorrError, function_1d
+import yaml
 
 
 # https://stackoverflow.com/questions/74551603/emcee-issue-mpi-while-sharing-an-executable-file
@@ -48,47 +49,54 @@ logging.getLogger().setLevel(logging.ERROR)
 plt.style.use("default")
 plt.rcParams["font.family"] = "Arial"
 
-config_cleaned_lc_directory = "/Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/"
-MJD_minus = 300
-MJD_plus = 200
-nwalkers_bazin = int(1e2)
-nsteps_bazin = int(1e5)
-flux_unc_cut = 100
 
-nwalkers_fireball = int(1e2)
-nsteps_fireball = int(1e5)
+# looking for YAML Settings file - if there isn't one we will make it
+from pathlib import Path
 
-progress = True
-plot = True
+my_file = Path("SNIPER_config.yml")
+if my_file.is_file():
+    with open("SNIPER_config.yml", "r") as ymlfile:
+        cfg = yaml.safe_load(ymlfile)
+else:
+    print(
+        "SNIPER Settings YAML does not exist - creating file in current working directory"
+    )
+    d = {
+        "data": {
+            "data_dir": "Your Data Directory",
+            "IAU_Names": "IAU Names csv",
+            "output_dir": os.getcwd(),
+            "flux_unc_cut": 100,
+        },
+        "mcmc": {
+            "mjd_minus": 300,
+            "mjd_plus": 200,
+            "nwalkers_bazin": 50,
+            "nsteps_bazin": 1e3,
+            "nwalkers_fireball": 50,
+            "nsteps_fireball": 1e3,
+        },
+        "progress": {"plots": True, "progress_bar": True},
+    }
+    with open("SNIPER_config.yml", "w") as yaml_file:
+        yaml.dump(d, yaml_file, default_flow_style=False)
 
-final_run_walker_multiplier = 1
-final_run_step_multiplier = 1
+MJD_minus = int(float(cfg["mcmc"]["mjd_minus"]))
+MJD_plus = int(float(cfg["mcmc"]["mjd_plus"]))
+nwalkers_bazin = int(float(cfg["mcmc"]["nwalkers_bazin"]))
+nsteps_bazin = int(float(cfg["mcmc"]["nsteps_bazin"]))
+flux_unc_cut = int(float(cfg["data"]["flux_unc_cut"]))
+
+nwalkers_fireball = int(float(cfg["mcmc"]["nwalkers_fireball"]))
+nsteps_fireball = int(float(cfg["mcmc"]["nsteps_fireball"]))
+
+progress = cfg["progress"]["progress_bar"]
+plot = cfg["progress"]["plots"]
+
+output_dir = cfg["data"]["output_dir"] + "SNIPER_Output"
 
 
-parser = argparse.ArgumentParser()
-
-parser.add_argument(
-    "-f",
-    "--file",
-    help="txt file containing a list of IAU names which SNIPER.py will work on",
-    dest="file",
-    type=argparse.FileType("r"),
-)
-
-parser.add_argument(
-    "-o",
-    "--output",
-    help="output directory (default cwd)",
-    default=os.getcwd(),
-    dest="output_dir",
-)
-
-args = parser.parse_args()
-
-output_dir = args.output_dir
-output_dir = output_dir + "/SNIPER_Output"
-
-# Creating output directories if they do no already exist
+# Creating output directories if they do not already exist
 
 if os.path.isdir(output_dir + "/corner") == False:
     print("No corner plot directory - making one!")
@@ -97,7 +105,6 @@ if os.path.isdir(output_dir + "/corner") == False:
 if os.path.isdir(output_dir + "/overplot/") == False:
     print("No overplot plot directory - making one!")
     os.makedirs(output_dir + "/overplot/")
-
 
 if os.path.isdir(output_dir + "/scatter/") == False:
     print("No scatter plot directory - making one!")
@@ -108,10 +115,9 @@ if os.path.isdir(output_dir + "/combined_output/") == False:
     os.makedirs(output_dir + "/combined_output/")
 
 
-IAU_list = pd.read_csv(args.file, header=None)
+IAU_list = pd.read_csv(cfg["data"]["IAU_Names"], header=None)
 IAU_list.columns = ["IAU_NAME"]
-
-# , "t_guess"
+lc_directory = cfg["data"]["data_dir"]
 
 global x_global, y_global, y_err_global
 
@@ -161,12 +167,12 @@ def chisq_bazin(p):
 def lnpriorline_bazin(p):
     A, B, T_rise, T_fall, t0 = p
     if (
-        0 < A < 1e6
-        and -100 < B < +1000
-        and 1 < T_rise < 3000
+        0 < A < 1e5
+        and -5 < B < +5
+        and 1 < T_rise < 300
         and 1 < T_fall < 300
         and 0 < t0
-        and T_rise / T_fall < 1
+        and T_rise < T_fall
     ):
         return 0.0
     return -np.inf
@@ -201,8 +207,8 @@ def chisq_fireball(p):
 def lnpriorline_fireball(p):
     a, T_exp_pow, n = p
     if (
-        1 < a < 0.2 * np.max(y_global)
-        and 1.2 < n < 2.5
+        1 < a < 0.4 * np.max(y_global)
+        and 1.5 < n < 2.15
         and T_exp_pow > np.min(x_global)
         and T_exp_pow < np.max(x_global)
     ):
@@ -519,7 +525,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         # t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == object, "t_guess"]
         print(f"Working on {object}")
         f = []
-        f = config_cleaned_lc_directory + object + "/" + object + ".o.1.00days.lc.txt"
+        f = lc_directory + object + "/" + object + ".o.1.00days.lc.txt"
         cols = [
             [
                 "MJD",
@@ -554,7 +560,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         flux = np.array(df.uJy)
 
         t_guess = time[np.argmax(savgol_filter(flux, 30, 2))]
-        print(f"An initial guess for where the SN is = {t_guess}")
 
         df_cut_min = float(t_guess) - MJD_minus
         df_cut_max = float(t_guess) + MJD_plus
@@ -571,7 +576,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         )
         def_global(x_global, y_global, y_err_global)
 
-        # combined output plot
         fig, ax = plt.subplots(dpi=300)
         ax.errorbar(
             x_global,
@@ -594,20 +598,19 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
 
         A, B, T_rise, T_fall, t0 = bazin_results[2]
         t_max_bazin = baz_tmax(t0, T_rise, T_fall)
-        print("max time =", t_max_bazin)
-        print("max time from mcmc samples = ", bazin_results[0])
         baz_max_flux = bazin(t_max_bazin, A, B, T_rise, T_fall, t0)
-        print("baz_max flux =", baz_max_flux)
-
         x_range = np.linspace(np.min(x_global), np.max(x_global), 500)
-        ax.plot(
-            x_range,
-            bazin(x_range, A, B, T_rise, T_fall, t0),
-            color="blue",
-            linestyle="-",
-            label="Bazin",
-            alpha=0.7,
-        )
+
+        flat_samples_bazin = bazin_results[7]
+        inds = np.random.randint(len(flat_samples_bazin), size=100)
+        for ind in inds:
+            sample = flat_samples_bazin[ind]
+            ax.plot(
+                x_range,
+                bazin(x_range, *sample),
+                "cornflowerblue",
+                alpha=0.1,
+            )
 
         # setting max and min for outputplot
         t_min_plot, t_max_plot = None, None
@@ -621,27 +624,76 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
                     t_max_plot = time_variable
                     print("setting t max", t_max_plot)
 
+        print("calculating t-1/2 and t+1/2 from the bazin fits")
+
+        bazin_range = np.linspace(np.min(x_global), np.max(x_global), 5000)
+        t_minus_half_samples, t_plus_half_samples = [], []
+        for sample in flat_samples_bazin:
+            t_minus_half, t_plus_half = None, None
+            A, B, T_rise, T_fall, t0 = sample
+            for time_variable in bazin_range:
+                if t_minus_half == None:
+                    if (
+                        bazin(time_variable, A, B, T_rise, T_fall, t0)
+                        > 0.5 * baz_max_flux
+                    ):
+                        t_minus_half = time_variable
+                if t_plus_half == None and (time_variable > t_max_bazin):
+                    if (
+                        bazin(time_variable, A, B, T_rise, T_fall, t0)
+                        < 0.5 * baz_max_flux
+                    ):
+                        t_plus_half = time_variable
+            t_minus_half_samples = np.append(t_minus_half_samples, t_minus_half)
+            t_plus_half_samples = np.append(t_plus_half_samples, t_plus_half)
+
+        ax.vlines(
+            np.mean(t_minus_half_samples),
+            -100,
+            1.5 * baz_max_flux,
+            linestyles="--",
+            color="k",
+            label="T minus half",
+        )
+        ax.vlines(
+            np.mean(t_plus_half_samples),
+            -100,
+            1.5 * baz_max_flux,
+            linestyles="--",
+            color="k",
+            label="T plus half",
+        )
+
         if t_max_plot == None:
             t_max_plot = np.max(x_global)
 
         if t_min_plot == None:
             print("FAILED TO ESTABLISH A T MIN from the BAZIN FIT...")
-            t_min_plot = t_max_bazin - 300
+
+        ax.vlines(
+            t_min_plot,
+            -100,
+            1.5 * baz_max_flux,
+            linestyles="--",
+            color="steelblue",
+            label="tmin_plot",
+        )
 
         ax.set_ylabel(r" Flux Density [$\rm \mu Jy$]")
         ax.set_xlabel(r"time [mjd]")
         ax.set_ylim(-10, 1.4 * baz_max_flux)
-
         # removing lightcurve after max light
 
         lightcurve_data = lightcurve_data.loc[
-            (lightcurve_data["MJD"].astype("float64") <= baz_tmax(t0, T_rise, T_fall))
+            (
+                lightcurve_data["MJD"].astype("float64")
+                <= np.nanmean(t_minus_half_samples)
+            )
         ]
 
         lightcurve_data = lightcurve_data.loc[
-            (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 50)
+            (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 20)
         ]
-        print(f"t_max = {t_max_bazin}")
 
         x_global, y_global, y_err_global = (
             lightcurve_data["MJD"].astype(float),
@@ -649,7 +701,8 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             lightcurve_data["duJy"].astype(float),
         )
         def_global(x_global, y_global, y_err_global)
-        first_guess = t_min_plot - 80
+
+        first_guess = t_min_plot - 10
 
         fireball_results = fit_fireball(
             priors=[0.01 * baz_max_flux, first_guess, 2],
@@ -660,14 +713,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             nsteps=nsteps_fireball,
         )
 
-        # fireball_results = fit_fireball(
-        #     priors=fireball_results[0],
-        #     progress=progress,
-        #     plot=plot,
-        #     object=object,
-        #     nwalkers=nwalkers_fireball * final_run_walker_multiplier,
-        #     nsteps=nsteps_fireball * final_run_step_multiplier,
-        # )
         x_range = np.linspace(
             np.min(x_global), baz_tmax(t0, T_rise, T_fall), 200
         )  # changing xrange to plot rise
@@ -675,14 +720,17 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         a, T_exp_pow, n = fireball_results[0]
         if t_min_plot == None:
             t_min_plot = T_exp_pow - 30
-        ax.plot(
-            x_range,
-            rise_mjd_fit(x_range, a, T_exp_pow, n),
-            color="red",
-            linestyle="-",
-            label="fireball",
-            alpha=0.7,
-        )
+
+        flat_samples_fireball = fireball_results[3]
+        inds = np.random.randint(len(flat_samples_fireball), size=100)
+        for ind in inds:
+            sample = flat_samples_fireball[ind]
+            ax.plot(
+                x_range,
+                rise_mjd_fit(x_range, *sample),
+                "mediumorchid",
+                alpha=0.1,
+            )
 
         bazin_max = bazin_results[0]
         bazin_max_err = bazin_results[1]
@@ -696,42 +744,24 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         mean_flux = np.nanmean(bazin_results[4])
         std_flux = np.nanstd(bazin_results[4])
 
-        ax.vlines(bazin_max, -100, 1.5 * baz_max_flux, linestyles="--", color="k")
-        plt.text(
-            bazin_max + 2,
-            0.75 * (np.max(y_global)),
-            r"$t_{\rm max}$",
-            rotation=90,
-            fontsize=14,
-            color="gray",
-            alpha=0.9,
-            zorder=0,
-        )
-
         # Marking on T Explode
-        ax.vlines(t_explode, -100, 1.5 * baz_max_flux, linestyles="--", color="r")
-        ax.text(
-            t_explode + 2,
-            0.75 * baz_max_flux,
-            r"$t_{\rm explode}$",
-            rotation=90,
-            fontsize=14,
+        ax.vlines(
+            t_explode,
+            -100,
+            1.5 * baz_max_flux,
+            linestyles="--",
             color="r",
-            alpha=0.9,
-            zorder=0,
+            label="T Explosion",
         )
 
         # Marking on T Max
-        ax.vlines(bazin_max, -100, 1.5 * baz_max_flux, linestyles="--", color="b")
-        ax.text(
-            bazin_max + 2,
-            0.15 * baz_max_flux,
-            r"$t_{\rm max}$",
-            rotation=90,
-            fontsize=14,
+        ax.vlines(
+            bazin_max,
+            -100,
+            1.5 * baz_max_flux,
+            linestyles="--",
             color="b",
-            alpha=0.9,
-            zorder=0,
+            label="Bazin Maximum",
         )
 
         ax.set_title(object)
@@ -752,6 +782,10 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         T_explode_upper = fireball_results[0][1] - fireball_results[2][1]
         T_max = bazin_max
         T_max_err = bazin_max_err
+        t_minus_half = np.nanmean(t_minus_half_samples)
+        t_minus_half_err = np.nanstd(t_minus_half_samples)
+        t_plus_half = np.nanmean(t_plus_half_samples)
+        t_plus_half_err = np.nanstd(t_plus_half_samples)
 
         results_dict = {
             "TNS Name": object,
@@ -769,6 +803,10 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             "T_explode_upper": T_explode_upper,
             "T_max": T_max,
             "T_max_err": T_max_err,
+            "t_minus_half": t_minus_half,
+            "t_minus_half_err": t_minus_half_err,
+            "t_plus_half": t_plus_half,
+            "t_plus_half_err": t_plus_half_err,
         }
         SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
         print(f"{object} parameters")
@@ -785,8 +823,9 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.txt", index=False)
         plt.close("all")
         gc.collect()
-    except ValueError:
+    except ValueError as e:
         print("Oops! Sniper failed for ", object)
+        print(e)
         results_dict = {
             "TNS Name": np.nan,
             "risetime": np.nan,

@@ -1,0 +1,17 @@
+data:
+  data_dir: /Users/thomasmoore/Library/CloudStorage/OneDrive-Queen'sUniversityBelfast/TM/Long
+    Rise Ibc/long_rise_LC/cleaned/
+  output_dir: /Users/thomasmoore/Library/CloudStorage/OneDrive-Queen'sUniversityBelfast/TM/Long
+    Rise Ibc/
+  flux_unc_cut: 80
+  IAU_Names: sample_LR.csv
+mcmc:
+  mjd_minus: 300
+  mjd_plus: 300
+  nsteps_bazin: 1e3
+  nsteps_fireball: 1e3
+  nwalkers_bazin: 100
+  nwalkers_fireball: 100
+progress:
+  plots: True
+  progress_bar: True
