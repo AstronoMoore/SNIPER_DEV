@@ -597,8 +597,9 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         )
 
         A, B, T_rise, T_fall, t0 = bazin_results[2]
-        t_max_bazin = baz_tmax(t0, T_rise, T_fall)
-        baz_max_flux = bazin(t_max_bazin, A, B, T_rise, T_fall, t0)
+        t_max_bazin = np.nanmean(bazin_results[5])
+        baz_max_flux = np.nanmean(bazin_results[6])
+        print(baz_max_flux)
         x_range = np.linspace(np.min(x_global), np.max(x_global), 500)
 
         flat_samples_bazin = bazin_results[7]
@@ -618,11 +619,9 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             if t_min_plot == None:
                 if bazin(time_variable, A, B, T_rise, T_fall, t0) > 0.05 * baz_max_flux:
                     t_min_plot = time_variable
-                    print("setting t min", t_min_plot)
             if t_max_plot == None and (time_variable > t_max_bazin):
                 if bazin(time_variable, A, B, T_rise, T_fall, t0) < 0.05 * baz_max_flux:
                     t_max_plot = time_variable
-                    print("setting t max", t_max_plot)
 
         print("calculating t-1/2 and t+1/2 from the bazin fits")
 
@@ -647,8 +646,9 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             t_minus_half_samples = np.append(t_minus_half_samples, t_minus_half)
             t_plus_half_samples = np.append(t_plus_half_samples, t_plus_half)
 
+        print(t_minus_half_samples)
         ax.vlines(
-            np.mean(t_minus_half_samples),
+            np.nanmean(t_minus_half_samples),
             -100,
             1.5 * baz_max_flux,
             linestyles="--",
@@ -692,7 +692,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         ]
 
         lightcurve_data = lightcurve_data.loc[
-            (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 20)
+            (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 45)
         ]
 
         x_global, y_global, y_err_global = (
@@ -810,7 +810,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         }
         SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
         print(f"{object} parameters")
-        print("risetime ", risetime)
+        print("risetime =", risetime)
 
         from IPython.display import display, Math
 
