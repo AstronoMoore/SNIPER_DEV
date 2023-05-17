@@ -169,8 +169,8 @@ def lnpriorline_bazin(p):
     if (
         0 < A < 1e5
         and -5 < B < +5
-        and 1 < T_rise < 300
-        and 1 < T_fall < 300
+        and 0 < T_rise < 300
+        and 0 < T_fall < 300
         and 0 < t0
         and T_rise < T_fall
     ):
@@ -423,7 +423,7 @@ def fit_fireball(**kwargs):
 
     #  a, T_exp_pow, n
     pos = np.zeros((nwalkers, ndim))
-    pos[:, 0] = float(priors[0]) + 5 * np.random.randn(nwalkers)
+    pos[:, 0] = float(priors[0]) + 2 * np.random.randn(nwalkers)
     pos[:, 1] = float(priors[1]) + 100 * np.random.randn(nwalkers)
     pos[:, 2] = float(priors[2]) + 0.1 * np.random.randn(nwalkers)
 
@@ -599,7 +599,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         A, B, T_rise, T_fall, t0 = bazin_results[2]
         t_max_bazin = np.nanmean(bazin_results[5])
         baz_max_flux = np.nanmean(bazin_results[6])
-        print(baz_max_flux)
         x_range = np.linspace(np.min(x_global), np.max(x_global), 500)
 
         flat_samples_bazin = bazin_results[7]
@@ -625,7 +624,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
 
         print("calculating t-1/2 and t+1/2 from the bazin fits")
 
-        bazin_range = np.linspace(np.min(x_global), np.max(x_global), 5000)
+        bazin_range = np.linspace(np.min(x_global), np.max(x_global), 1000)
         t_minus_half_samples, t_plus_half_samples = [], []
         for sample in flat_samples_bazin:
             t_minus_half, t_plus_half = None, None
@@ -646,7 +645,9 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             t_minus_half_samples = np.append(t_minus_half_samples, t_minus_half)
             t_plus_half_samples = np.append(t_plus_half_samples, t_plus_half)
 
-        print(t_minus_half_samples)
+        t_minus_half_samples = t_minus_half_samples.astype(float)
+        t_plus_half_samples = t_plus_half_samples.astype(float)
+
         ax.vlines(
             np.nanmean(t_minus_half_samples),
             -100,
@@ -692,7 +693,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         ]
 
         lightcurve_data = lightcurve_data.loc[
-            (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 45)
+            (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 80)
         ]
 
         x_global, y_global, y_err_global = (
@@ -823,7 +824,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.txt", index=False)
         plt.close("all")
         gc.collect()
-    except ValueError as e:
+    except ValueError or TypeError as e:
         print("Oops! Sniper failed for ", object)
         print(e)
         results_dict = {
