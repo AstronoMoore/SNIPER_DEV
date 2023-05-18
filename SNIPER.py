@@ -648,6 +648,54 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         t_minus_half_samples = t_minus_half_samples.astype(float)
         t_plus_half_samples = t_plus_half_samples.astype(float)
 
+        # #############################################
+        bazin_max = bazin_results[0]
+        bazin_max_err = bazin_results[1]
+        T_rise = bazin_results[2][2]
+        T_rise_lower = bazin_results[2][2] - bazin_results[3][2]
+        T_rise_upper = bazin_results[2][2] - bazin_results[4][2]
+        T_fall = bazin_results[2][3]
+        T_fall_lower = bazin_results[2][3] - bazin_results[3][3]
+        T_fall_upper = bazin_results[2][3] - bazin_results[4][3]
+        T_max = bazin_max
+        T_max_err = bazin_max_err
+        t_minus_half = np.nanmean(t_minus_half_samples)
+        t_minus_half_err = np.nanstd(t_minus_half_samples)
+        t_plus_half = np.nanmean(t_plus_half_samples)
+        t_plus_half_err = np.nanstd(t_plus_half_samples)
+        t_minus_five = t_min_plot
+        t_plus_five = t_max_plot
+
+        results_dict = {
+            "TNS Name": object,
+            "risetime": np.nan,
+            "risetime_upper": np.nan,
+            "risetime_lower": np.nan,
+            "T_rise": T_rise,
+            "T_rise_upper": T_rise_upper,
+            "T_rise_lower": T_rise_lower,
+            "T_fall": T_fall,
+            "T_fall_upper": T_fall_upper,
+            "T_fall_lower": T_fall_lower,
+            "T_max": T_max,
+            "T_max_err": T_max_err,
+            "t_minus_half": t_minus_half,
+            "t_minus_half_err": t_minus_half_err,
+            "t_plus_half": t_plus_half,
+            "t_plus_half_err": t_plus_half_err,
+            "t_minus_five": t_minus_five,
+            "t_plus_five": t_plus_five,
+            "T_explode": np.nan,
+            "T_explode_lower": np.nan,
+            "T_explode_upper": np.nan,
+            "fireball_power": np.nan,
+            "fireball_power_lower": np.nan,
+            "fireball_power_upper": np.nan,
+        }
+
+        SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
+        ##############################################
+
         ax.vlines(
             np.nanmean(t_minus_half_samples),
             -100,
@@ -733,21 +781,19 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
                 alpha=0.1,
             )
 
-        bazin_max = bazin_results[0]
-        bazin_max_err = bazin_results[1]
-        t_explode = fireball_results[0][1]
-        t_explode_lower = fireball_results[0][1] - fireball_results[1][1]
-        t_explode_upper = fireball_results[0][1] - fireball_results[2][1]
-        risetime = bazin_max - t_explode
-        risetime_err_lower = t_explode_lower - bazin_max_err
-        risetime_err_upper = t_explode_upper + bazin_max_err
+        T_explode = fireball_results[0][1]
+        T_explode_lower = fireball_results[0][1] - fireball_results[1][1]
+        T_explode_upper = fireball_results[0][1] - fireball_results[2][1]
+        risetime = bazin_max - T_explode
+        risetime_err_lower = T_explode_lower - bazin_max_err
+        risetime_err_upper = T_explode_upper + bazin_max_err
 
         mean_flux = np.nanmean(bazin_results[4])
         std_flux = np.nanstd(bazin_results[4])
 
         # Marking on T Explode
         ax.vlines(
-            t_explode,
+            T_explode,
             -100,
             1.5 * baz_max_flux,
             linestyles="--",
@@ -772,21 +818,11 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         fig.savefig(output_dir + "/combined_output/" + object + ".png")
         plt.close()
 
-        T_rise = bazin_results[2][2]
-        T_rise_lower = bazin_results[2][2] - bazin_results[3][2]
-        T_rise_upper = bazin_results[2][2] - bazin_results[4][2]
-        T_fall = bazin_results[2][3]
-        T_fall_lower = bazin_results[2][3] - bazin_results[3][3]
-        T_fall_upper = bazin_results[2][3] - bazin_results[4][3]
-        T_explode = fireball_results[0][1]
-        T_explode_lower = fireball_results[0][1] - fireball_results[1][1]
-        T_explode_upper = fireball_results[0][1] - fireball_results[2][1]
-        T_max = bazin_max
-        T_max_err = bazin_max_err
-        t_minus_half = np.nanmean(t_minus_half_samples)
-        t_minus_half_err = np.nanstd(t_minus_half_samples)
-        t_plus_half = np.nanmean(t_plus_half_samples)
-        t_plus_half_err = np.nanstd(t_plus_half_samples)
+        # Calculating the rest of the params for results dict
+
+        fireball_power = fireball_results[0][2]
+        fireball_power_lower = fireball_results[0][2] - fireball_results[1][2]
+        fireball_power_upper = fireball_results[0][1] - fireball_results[2][1]
 
         results_dict = {
             "TNS Name": object,
@@ -799,16 +835,25 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             "T_fall": T_fall,
             "T_fall_upper": T_fall_upper,
             "T_fall_lower": T_fall_lower,
-            "T_explode": T_explode,
-            "T_explode_lower": T_explode_lower,
-            "T_explode_upper": T_explode_upper,
             "T_max": T_max,
             "T_max_err": T_max_err,
             "t_minus_half": t_minus_half,
             "t_minus_half_err": t_minus_half_err,
             "t_plus_half": t_plus_half,
             "t_plus_half_err": t_plus_half_err,
+            "t_minus_five": t_minus_five,
+            "t_plus_five": t_plus_five,
+            "T_explode": T_explode,
+            "T_explode_lower": T_explode_lower,
+            "T_explode_upper": T_explode_upper,
+            "fireball_power": fireball_power,
+            "fireball_power_lower": fireball_power_lower,
+            "fireball_power_upper": fireball_power_upper,
         }
+        SNIPER_OUTPUT = SNIPER_OUTPUT[
+            SNIPER_OUTPUT["TNS Name"] != object
+        ]  # removing bazin only results from table
+
         SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
         print(f"{object} parameters")
         print("risetime =", risetime)
