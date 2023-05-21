@@ -24,8 +24,6 @@ import gc
 from tqdm import *
 import matplotlib
 import matplotlib.pyplot as plt
-from mpi4py import MPI
-from mpipool import MPIPool
 from emcee.autocorr import AutocorrError, function_1d
 import yaml
 
@@ -693,7 +691,11 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             "fireball_power_upper": np.nan,
         }
 
-        SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
+        # SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
+        SNIPER_OUTPUT = pd.concat(
+            [SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True
+        )
+
         ##############################################
 
         ax.vlines(
@@ -854,40 +856,18 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             SNIPER_OUTPUT["TNS Name"] != object
         ]  # removing bazin only results from table
 
-        SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
+        # SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
+        SNIPER_OUTPUT = pd.concat(
+            [SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True
+        )
+
         print(f"{object} parameters")
         print("risetime =", risetime)
 
-        from IPython.display import display, Math
-
-        txt = "\mathrm{{{3}}} = {0:.3f}_{{-{1:.3f}}}^{{{2:.3f}}}"
-        txt = txt.format(
-            risetime, abs(risetime_err_lower), risetime_err_upper, str(object)
-        )
-        display(Math(txt))
-
-        SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.txt", index=False)
+        SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
         plt.close("all")
         gc.collect()
     except ValueError or TypeError as e:
         print("Oops! Sniper failed for ", object)
         print(e)
-        results_dict = {
-            "TNS Name": np.nan,
-            "risetime": np.nan,
-            "risetime_upper": np.nan,
-            "risetime_lower": np.nan,
-            "T_rise": np.nan,
-            "T_rise_upper": np.nan,
-            "T_rise_lower": np.nan,
-            "T_fall": np.nan,
-            "T_fall_upper": np.nan,
-            "T_fall_lower": np.nan,
-            "T_explode": np.nan,
-            "T_explode_lower": np.nan,
-            "T_explode_upper": np.nan,
-            "T_max": np.nan,
-            "T_max_err": np.nan,
-        }
-        SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
-        SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.txt", index=False)
+        SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
