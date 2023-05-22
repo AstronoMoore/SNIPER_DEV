@@ -253,6 +253,7 @@ def flux_to_ABmag(flux):
 
 
 def fit_bazin(**kwargs):
+    print("Fitting a Bazin Function")
     priors = kwargs.get("priors", [0.1 * np.max(y_global), 0, 3, 4, np.mean(x_global)])
     # priors = np.array(priors)
     nwalkers = kwargs.get("nwalkers", int(100))
@@ -407,6 +408,8 @@ def fit_bazin(**kwargs):
 
 
 def fit_fireball(**kwargs):
+    print("Fitting a Fireball Model")
+
     priors = kwargs.get("priors", [1, np.mean(x_global), 2])
     # print(f'No priors given = assumning {priors}')
     nwalkers = kwargs.get("nwalkers", int(1000))
@@ -620,7 +623,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
                 if bazin(time_variable, A, B, T_rise, T_fall, t0) < 0.05 * baz_max_flux:
                     t_max_plot = time_variable
 
-        print("calculating t-1/2 and t+1/2 from the bazin fits")
+        print("Using the Bazin fit to calculate t-1/2 and t+1/2 from the bazin fits")
 
         bazin_range = np.linspace(np.min(x_global), np.max(x_global), 1000)
         t_minus_half_samples, t_plus_half_samples = [], []
