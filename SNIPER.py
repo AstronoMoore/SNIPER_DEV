@@ -521,15 +521,15 @@ def fit_fireball(**kwargs):
 
 SNIPER_OUTPUT = pd.DataFrame()
 
-for object in tqdm(IAU_list["IAU_NAME"], leave=False):
+for TNS_ID in tqdm(IAU_list["IAU_NAME"], leave=False):
     lightcurve_data = []
     df = []
     t_minus_half_samples, t_plus_half_samples = [], []
     try:
-        # t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == object, "t_guess"]
-        print(f"Working on {object}")
+        # t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == TNS_ID, "t_guess"]
+        print(f"Working on {TNS_ID}")
         f = []
-        f = lc_directory + object + "/" + object + ".o.1.00days.lc.txt"
+        f = lc_directory + TNS_ID + "/" + TNS_ID + ".o.1.00days.lc.txt"
         cols = [
             [
                 "MJD",
@@ -594,7 +594,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         bazin_results = fit_bazin(
             progress=progress,
             plot=True,
-            object=object,
+            object=TNS_ID,
             nwalkers=nwalkers_bazin,
             nsteps=nsteps_bazin,
         )
@@ -669,7 +669,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         t_plus_five = t_max_plot
 
         results_dict = {
-            "TNS Name": object,
+            "TNS Name": TNS_ID,
             "risetime": np.nan,
             "risetime_upper": np.nan,
             "risetime_lower": np.nan,
@@ -763,7 +763,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             priors=[0.01 * baz_max_flux, first_guess, 2],
             progress=progress,
             plot=True,
-            object=object,
+            object=TNS_ID,
             nwalkers=nwalkers_fireball,
             nsteps=nsteps_fireball,
         )
@@ -817,11 +817,11 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             label="Bazin Maximum",
         )
 
-        ax.set_title(object)
+        ax.set_title(TNS_ID)
         ax.legend()
         ax.set_xlim(t_min_plot - 80, t_max_plot + 80)
 
-        fig.savefig(output_dir + "/combined_output/" + object + ".png")
+        fig.savefig(output_dir + "/combined_output/" + TNS_ID + ".png")
         plt.close()
 
         # Calculating the rest of the params for results dict
@@ -831,7 +831,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         fireball_power_upper = fireball_results[0][1] - fireball_results[2][1]
 
         results_dict = {
-            "TNS Name": object,
+            "TNS Name": TNS_ID,
             "risetime": risetime,
             "risetime_upper": risetime_err_upper,
             "risetime_lower": risetime_err_lower,
@@ -857,7 +857,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             "fireball_power_upper": fireball_power_upper,
         }
         SNIPER_OUTPUT = SNIPER_OUTPUT[
-            SNIPER_OUTPUT["TNS Name"] != object
+            SNIPER_OUTPUT["TNS Name"] != TNS_ID
         ]  # removing bazin only results from table
 
         # SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
@@ -865,13 +865,13 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             [SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True
         )
 
-        print(f"{object} parameters")
+        print(f"{TNS_ID} parameters")
         print("risetime =", risetime)
 
         SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
         plt.close("all")
         gc.collect()
     except ValueError or TypeError as e:
-        print("Oops! Sniper failed for ", object)
+        print("Oops! Sniper failed for ", TNS_ID)
         print(e)
         SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
