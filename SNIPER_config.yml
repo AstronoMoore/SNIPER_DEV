@@ -6,10 +6,10 @@ data:
 mcmc:
   mjd_minus: 300
   mjd_plus: 300
-  nsteps_bazin: 1e3
-  nsteps_fireball: 1e3
-  nwalkers_bazin: 200
-  nwalkers_fireball: 200
+  nsteps_bazin: 3e5
+  nsteps_fireball: 8e5
+  nwalkers_bazin: 30
+  nwalkers_fireball: 30
 progress:
   plots: True
-  progress_bar: True
+  progress_bar: False

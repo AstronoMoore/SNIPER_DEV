@@ -206,7 +206,7 @@ def lnpriorline_fireball(p):
     a, T_exp_pow, n = p
     if (
         1 < a < 0.4 * np.max(y_global)
-        and 1.5 < n < 2.15
+        and 0.5 < n < 4.0
         and T_exp_pow > np.min(x_global)
         and T_exp_pow < np.max(x_global)
     ):
