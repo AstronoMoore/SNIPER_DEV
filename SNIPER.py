@@ -522,6 +522,9 @@ def fit_fireball(**kwargs):
 SNIPER_OUTPUT = pd.DataFrame()
 
 for object in tqdm(IAU_list["IAU_NAME"], leave=False):
+    lightcurve_data = []
+    df = []
+    t_minus_half_samples, t_plus_half_samples = [], []
     try:
         # t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == object, "t_guess"]
         print(f"Working on {object}")
@@ -551,7 +554,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
                 "mask",
             ]
         ]
-        df = []
         df = pd.read_csv(f, delim_whitespace=True)
         df = df.filter(("MJD", "uJy", "duJy"), axis=1)
         df.drop(df[df.duJy > flux_unc_cut].index, inplace=True)
@@ -626,7 +628,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
         print("Using the Bazin fit to calculate t-1/2 and t+1/2 from the bazin fits")
 
         bazin_range = np.linspace(np.min(x_global), np.max(x_global), 1000)
-        t_minus_half_samples, t_plus_half_samples = [], []
         for sample in flat_samples_bazin:
             t_minus_half, t_plus_half = None, None
             A, B, T_rise, T_fall, t0 = sample
