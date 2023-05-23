@@ -2,7 +2,6 @@ import sys
 import importlib
 from importlib import reload
 import os
-import argparse
 import math
 import glob
 import astropy
@@ -26,104 +25,14 @@ import matplotlib
 import matplotlib.pyplot as plt
 from emcee.autocorr import AutocorrError, function_1d
 import yaml
-
-
-# https://stackoverflow.com/questions/74551603/emcee-issue-mpi-while-sharing-an-executable-file
-
-# from multiprocessing import Pool
+from multiprocessing import Pool
 from schwimmbad import MPIPool
-
-# pool = MPIPool()
-
-# suppressing warnings
-import warnings
-
-warnings.filterwarnings("ignore")  # setting ignore as a parameter
 import logging
-
-logging.getLogger().setLevel(logging.ERROR)
-
-# plt.style.use('ggplot')
-plt.style.use("default")
-plt.rcParams["font.family"] = "Arial"
-
-
-# looking for YAML Settings file - if there isn't one we will make it
+import warnings
 from pathlib import Path
-
-my_file = Path("SNIPER_config.yml")
-if my_file.is_file():
-    with open("SNIPER_config.yml", "r") as ymlfile:
-        cfg = yaml.safe_load(ymlfile)
-else:
-    print(
-        "SNIPER Settings YAML does not exist - creating file in current working directory"
-    )
-    d = {
-        "data": {
-            "data_dir": "Your Data Directory",
-            "IAU_Names": "IAU Names csv",
-            "output_dir": os.getcwd(),
-            "flux_unc_cut": 100,
-        },
-        "mcmc": {
-            "mjd_minus": 300,
-            "mjd_plus": 200,
-            "nwalkers_bazin": 50,
-            "nsteps_bazin": 1e3,
-            "nwalkers_fireball": 50,
-            "nsteps_fireball": 1e3,
-        },
-        "progress": {"plots": True, "progress_bar": True},
-    }
-    with open("SNIPER_config.yml", "w") as yaml_file:
-        yaml.dump(d, yaml_file, default_flow_style=False)
-
-MJD_minus = int(float(cfg["mcmc"]["mjd_minus"]))
-MJD_plus = int(float(cfg["mcmc"]["mjd_plus"]))
-nwalkers_bazin = int(float(cfg["mcmc"]["nwalkers_bazin"]))
-nsteps_bazin = int(float(cfg["mcmc"]["nsteps_bazin"]))
-flux_unc_cut = int(float(cfg["data"]["flux_unc_cut"]))
-
-nwalkers_fireball = int(float(cfg["mcmc"]["nwalkers_fireball"]))
-nsteps_fireball = int(float(cfg["mcmc"]["nsteps_fireball"]))
-
-progress = cfg["progress"]["progress_bar"]
-plot = cfg["progress"]["plots"]
-
-output_dir = cfg["data"]["output_dir"] + "SNIPER_Output"
-
-
-# Creating output directories if they do not already exist
-
-if os.path.isdir(output_dir + "/corner") == False:
-    print("No corner plot directory - making one!")
-    os.makedirs(output_dir + "/corner/")
-
-if os.path.isdir(output_dir + "/overplot/") == False:
-    print("No overplot plot directory - making one!")
-    os.makedirs(output_dir + "/overplot/")
-
-if os.path.isdir(output_dir + "/scatter/") == False:
-    print("No scatter plot directory - making one!")
-    os.makedirs(output_dir + "/scatter/")
-
-if os.path.isdir(output_dir + "/combined_output/") == False:
-    print("No combined_output plot directory - making one!")
-    os.makedirs(output_dir + "/combined_output/")
-
-
-IAU_list = pd.read_csv(cfg["data"]["IAU_Names"], header=None)
-IAU_list.columns = ["IAU_NAME"]
-lc_directory = cfg["data"]["data_dir"]
-
-global x_global, y_global, y_err_global
 
 
 def def_global(x, y, y_err):
-    global x_global
-    global y_global
-    global y_err_global
     x_global = np.array(x).astype("float64")
     y_global = np.array(y).astype("float64")
     y_err_global = np.array(y_err).astype("float64")
@@ -253,6 +162,9 @@ def flux_to_ABmag(flux):
 
 
 def fit_bazin(**kwargs):
+    global x_global
+    global y_global
+    global y_err_global
     print("Fitting a Bazin Function")
     priors = kwargs.get("priors", [0.1 * np.max(y_global), 0, 3, 4, np.mean(x_global)])
     # priors = np.array(priors)
@@ -277,12 +189,13 @@ def fit_bazin(**kwargs):
     pos = [pos1, pos2, pos3, pos4, pos5]
     pos = np.transpose(pos)
 
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
-    sampler.run_mcmc(pos, nsteps, progress=progress)
+    # sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
+    # sampler.run_mcmc(pos, nsteps, progress=progress)
 
-    # with MPIPool() as pool:
-    #     sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
-    #     sampler.run_mcmc(pos, nsteps, progress=True)
+    with MPIPool() as pool:
+        # with Pool() as pool:
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
+        sampler.run_mcmc(pos, nsteps, progress=True)
 
     samples = sampler.get_chain()
     flat_samples = sampler.get_chain(
@@ -428,14 +341,13 @@ def fit_fireball(**kwargs):
     pos[:, 1] = float(priors[1]) + 100 * np.random.randn(nwalkers)
     pos[:, 2] = float(priors[2]) + 0.1 * np.random.randn(nwalkers)
 
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_fireball)
-    sampler.run_mcmc(pos, nsteps, progress=progress)
+    # sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_fireball)
+    # sampler.run_mcmc(pos, nsteps, progress=progress)
 
-    # with MPIPool() as pool:
-    #     sampler = emcee.EnsembleSampler(
-    #         nwalkers, ndim, lnprobline_fireball, args=(t_min, t_max), pool=pool
-    #     )
-    #     sampler.run_mcmc(pos, nsteps, progress=True)
+    with MPIPool() as pool:
+        # with Pool() as pool:
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_fireball, pool=pool)
+        sampler.run_mcmc(pos, nsteps, progress=True)
 
     samples = sampler.get_chain()
     flat_samples = sampler.get_chain(
@@ -519,359 +431,447 @@ def fit_fireball(**kwargs):
     return best_params, upper_quartile, lower_quartile, flat_samples
 
 
-SNIPER_OUTPUT = pd.DataFrame()
+if __name__ == "__main__":
+    # from multiprocessing import Pool
 
-for TNS_ID in tqdm(IAU_list["IAU_NAME"], leave=False):
-    lightcurve_data = []
-    df = []
-    t_minus_half_samples, t_plus_half_samples = [], []
-    try:
-        # t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == TNS_ID, "t_guess"]
-        print(f"Working on {TNS_ID}")
-        f = []
-        f = lc_directory + TNS_ID + "/" + TNS_ID + ".o.1.00days.lc.txt"
-        cols = [
-            [
-                "MJD",
-                "m",
-                "dm",
-                "uJy",
-                "duJy",
-                "F",
-                "err",
-                "chi/N",
-                "RA",
-                "Dec",
-                "x",
-                "y",
-                "maj",
-                "min",
-                "phi",
-                "apfit",
-                "mag5sig",
-                "Sky",
-                "Obs",
-                "mask",
+    warnings.filterwarnings("ignore")  # setting ignore as a parameter
+
+    logging.getLogger().setLevel(logging.ERROR)
+
+    # plt.style.use('ggplot')
+    plt.style.use("default")
+    plt.rcParams["font.family"] = "Arial"
+
+    # looking for YAML Settings file - if there isn't one we will make it
+
+    my_file = Path("SNIPER_config.yml")
+    if my_file.is_file():
+        with open("SNIPER_config.yml", "r") as ymlfile:
+            cfg = yaml.safe_load(ymlfile)
+    else:
+        print(
+            "SNIPER Settings YAML does not exist - creating file in current working directory"
+        )
+        d = {
+            "data": {
+                "data_dir": "Your Data Directory",
+                "IAU_Names": "IAU Names csv",
+                "output_dir": os.getcwd(),
+                "flux_unc_cut": 100,
+            },
+            "mcmc": {
+                "mjd_minus": 300,
+                "mjd_plus": 200,
+                "nwalkers_bazin": 50,
+                "nsteps_bazin": 1e3,
+                "nwalkers_fireball": 50,
+                "nsteps_fireball": 1e3,
+            },
+            "progress": {"plots": True, "progress_bar": True},
+        }
+        with open("SNIPER_config.yml", "w") as yaml_file:
+            yaml.dump(d, yaml_file, default_flow_style=False)
+
+    MJD_minus = int(float(cfg["mcmc"]["mjd_minus"]))
+    MJD_plus = int(float(cfg["mcmc"]["mjd_plus"]))
+    nwalkers_bazin = int(float(cfg["mcmc"]["nwalkers_bazin"]))
+    nsteps_bazin = int(float(cfg["mcmc"]["nsteps_bazin"]))
+    flux_unc_cut = int(float(cfg["data"]["flux_unc_cut"]))
+
+    nwalkers_fireball = int(float(cfg["mcmc"]["nwalkers_fireball"]))
+    nsteps_fireball = int(float(cfg["mcmc"]["nsteps_fireball"]))
+
+    progress = cfg["progress"]["progress_bar"]
+    plot = cfg["progress"]["plots"]
+
+    output_dir = cfg["data"]["output_dir"] + "SNIPER_Output"
+
+    # Creating output directories if they do not already exist
+
+    if os.path.isdir(output_dir + "/corner") == False:
+        print("No corner plot directory - making one!")
+        os.makedirs(output_dir + "/corner/")
+
+    if os.path.isdir(output_dir + "/overplot/") == False:
+        print("No overplot plot directory - making one!")
+        os.makedirs(output_dir + "/overplot/")
+
+    if os.path.isdir(output_dir + "/scatter/") == False:
+        print("No scatter plot directory - making one!")
+        os.makedirs(output_dir + "/scatter/")
+
+    if os.path.isdir(output_dir + "/combined_output/") == False:
+        print("No combined_output plot directory - making one!")
+        os.makedirs(output_dir + "/combined_output/")
+
+    IAU_list = pd.read_csv(cfg["data"]["IAU_Names"], header=None)
+    IAU_list.columns = ["IAU_NAME"]
+    lc_directory = cfg["data"]["data_dir"]
+
+    SNIPER_OUTPUT = pd.DataFrame()
+
+    for TNS_ID in tqdm(IAU_list["IAU_NAME"], leave=False):
+        lightcurve_data = []
+        df = []
+        t_minus_half_samples, t_plus_half_samples = [], []
+        try:
+            global x_global
+            global y_global
+            global y_err_global
+            # t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == TNS_ID, "t_guess"]
+            # print(f"Working on {TNS_ID}")
+            f = []
+            f = lc_directory + TNS_ID + "/" + TNS_ID + ".o.1.00days.lc.txt"
+            cols = [
+                [
+                    "MJD",
+                    "m",
+                    "dm",
+                    "uJy",
+                    "duJy",
+                    "F",
+                    "err",
+                    "chi/N",
+                    "RA",
+                    "Dec",
+                    "x",
+                    "y",
+                    "maj",
+                    "min",
+                    "phi",
+                    "apfit",
+                    "mag5sig",
+                    "Sky",
+                    "Obs",
+                    "mask",
+                ]
             ]
-        ]
-        df = pd.read_csv(f, delim_whitespace=True)
-        df = df.filter(("MJD", "uJy", "duJy"), axis=1)
-        df.drop(df[df.duJy > flux_unc_cut].index, inplace=True)
-        df = df.dropna()
+            df = pd.read_csv(f, delim_whitespace=True)
+            df = df.filter(("MJD", "uJy", "duJy"), axis=1)
+            df.drop(df[df.duJy > flux_unc_cut].index, inplace=True)
+            df = df.dropna()
 
-        time = np.array(df.MJD)
-        flux = np.array(df.uJy)
+            time = np.array(df.MJD)
+            flux = np.array(df.uJy)
 
-        t_guess = time[np.argmax(savgol_filter(flux, 30, 2))]
+            t_guess = time[np.argmax(savgol_filter(flux, 30, 2))]
 
-        df_cut_min = float(t_guess) - MJD_minus
-        df_cut_max = float(t_guess) + MJD_plus
-        df_new = df.dropna(how="any", axis=0)
+            df_cut_min = float(t_guess) - MJD_minus
+            df_cut_max = float(t_guess) + MJD_plus
+            df_new = df.dropna(how="any", axis=0)
 
-        lightcurve_data = df_new.loc[
-            (df["MJD"].astype("float64") >= df_cut_min)
-            & (df["MJD"].astype("float64") <= df_cut_max)
-        ]
-        x_global, y_global, y_err_global = (
-            lightcurve_data["MJD"].astype("float64"),
-            lightcurve_data["uJy"].astype("float64"),
-            lightcurve_data["duJy"].astype("float64"),
-        )
-        def_global(x_global, y_global, y_err_global)
+            lightcurve_data = df_new.loc[
+                (df["MJD"].astype("float64") >= df_cut_min)
+                & (df["MJD"].astype("float64") <= df_cut_max)
+            ]
+            x_global, y_global, y_err_global = (
+                lightcurve_data["MJD"].astype("float64"),
+                lightcurve_data["uJy"].astype("float64"),
+                lightcurve_data["duJy"].astype("float64"),
+            )
+            def_global(x_global, y_global, y_err_global)
 
-        fig, ax = plt.subplots(dpi=300)
-        ax.errorbar(
-            x_global,
-            y_global,
-            y_err_global,
-            color="k",
-            linestyle="",
-            fmt=".",
-        )
-
-        def_global(x_global, y_global, y_err_global)
-
-        bazin_results = fit_bazin(
-            progress=progress,
-            plot=True,
-            object=TNS_ID,
-            nwalkers=nwalkers_bazin,
-            nsteps=nsteps_bazin,
-        )
-
-        A, B, T_rise, T_fall, t0 = bazin_results[2]
-        t_max_bazin = np.nanmean(bazin_results[5])
-        baz_max_flux = np.nanmean(bazin_results[6])
-        x_range = np.linspace(np.min(x_global), np.max(x_global), 500)
-
-        flat_samples_bazin = bazin_results[7]
-        inds = np.random.randint(len(flat_samples_bazin), size=100)
-        for ind in inds:
-            sample = flat_samples_bazin[ind]
-            ax.plot(
-                x_range,
-                bazin(x_range, *sample),
-                "cornflowerblue",
-                alpha=0.1,
+            fig, ax = plt.subplots(dpi=300)
+            ax.errorbar(
+                x_global,
+                y_global,
+                y_err_global,
+                color="k",
+                linestyle="",
+                fmt=".",
             )
 
-        # setting max and min for outputplot
-        t_min_plot, t_max_plot = None, None
-        for time_variable in x_range:
+            def_global(x_global, y_global, y_err_global)
+
+            bazin_results = fit_bazin(
+                progress=progress,
+                plot=True,
+                object=TNS_ID,
+                nwalkers=nwalkers_bazin,
+                nsteps=nsteps_bazin,
+            )
+
+            A, B, T_rise, T_fall, t0 = bazin_results[2]
+            t_max_bazin = np.nanmean(bazin_results[5])
+            baz_max_flux = np.nanmean(bazin_results[6])
+            x_range = np.linspace(np.min(x_global), np.max(x_global), 500)
+
+            flat_samples_bazin = bazin_results[7]
+            inds = np.random.randint(len(flat_samples_bazin), size=100)
+            for ind in inds:
+                sample = flat_samples_bazin[ind]
+                ax.plot(
+                    x_range,
+                    bazin(x_range, *sample),
+                    "cornflowerblue",
+                    alpha=0.1,
+                )
+
+            # setting max and min for outputplot
+            t_min_plot, t_max_plot = None, None
+            for time_variable in x_range:
+                if t_min_plot == None:
+                    if (
+                        bazin(time_variable, A, B, T_rise, T_fall, t0)
+                        > 0.05 * baz_max_flux
+                    ):
+                        t_min_plot = time_variable
+                if t_max_plot == None and (time_variable > t_max_bazin):
+                    if (
+                        bazin(time_variable, A, B, T_rise, T_fall, t0)
+                        < 0.05 * baz_max_flux
+                    ):
+                        t_max_plot = time_variable
+
+            print(
+                "Using the Bazin fit to calculate t-1/2 and t+1/2 from the bazin fits"
+            )
+
+            bazin_range = np.linspace(np.min(x_global), np.max(x_global), 1000)
+            for sample in flat_samples_bazin:
+                t_minus_half, t_plus_half = None, None
+                A, B, T_rise, T_fall, t0 = sample
+                for time_variable in bazin_range:
+                    if t_minus_half == None:
+                        if (
+                            bazin(time_variable, A, B, T_rise, T_fall, t0)
+                            > 0.5 * baz_max_flux
+                        ):
+                            t_minus_half = time_variable
+                    if t_plus_half == None and (time_variable > t_max_bazin):
+                        if (
+                            bazin(time_variable, A, B, T_rise, T_fall, t0)
+                            < 0.5 * baz_max_flux
+                        ):
+                            t_plus_half = time_variable
+                t_minus_half_samples = np.append(t_minus_half_samples, t_minus_half)
+                t_plus_half_samples = np.append(t_plus_half_samples, t_plus_half)
+
+            t_minus_half_samples = t_minus_half_samples.astype(float)
+            t_plus_half_samples = t_plus_half_samples.astype(float)
+
+            # #############################################
+            bazin_max = bazin_results[0]
+            bazin_max_err = bazin_results[1]
+            T_rise = bazin_results[2][2]
+            T_rise_lower = bazin_results[2][2] - bazin_results[3][2]
+            T_rise_upper = bazin_results[2][2] - bazin_results[4][2]
+            T_fall = bazin_results[2][3]
+            T_fall_lower = bazin_results[2][3] - bazin_results[3][3]
+            T_fall_upper = bazin_results[2][3] - bazin_results[4][3]
+            T_max = bazin_max
+            T_max_err = bazin_max_err
+            t_minus_half = np.nanmean(t_minus_half_samples)
+            t_minus_half_err = np.nanstd(t_minus_half_samples)
+            t_plus_half = np.nanmean(t_plus_half_samples)
+            t_plus_half_err = np.nanstd(t_plus_half_samples)
+            t_minus_five = t_min_plot
+            t_plus_five = t_max_plot
+
+            results_dict = {
+                "TNS Name": TNS_ID,
+                "risetime": np.nan,
+                "risetime_upper": np.nan,
+                "risetime_lower": np.nan,
+                "T_rise": T_rise,
+                "T_rise_upper": T_rise_upper,
+                "T_rise_lower": T_rise_lower,
+                "T_fall": T_fall,
+                "T_fall_upper": T_fall_upper,
+                "T_fall_lower": T_fall_lower,
+                "T_max": T_max,
+                "T_max_err": T_max_err,
+                "t_minus_half": t_minus_half,
+                "t_minus_half_err": t_minus_half_err,
+                "t_plus_half": t_plus_half,
+                "t_plus_half_err": t_plus_half_err,
+                "t_minus_five": t_minus_five,
+                "t_plus_five": t_plus_five,
+                "T_explode": np.nan,
+                "T_explode_lower": np.nan,
+                "T_explode_upper": np.nan,
+                "fireball_power": np.nan,
+                "fireball_power_lower": np.nan,
+                "fireball_power_upper": np.nan,
+            }
+
+            # SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
+            SNIPER_OUTPUT = pd.concat(
+                [SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True
+            )
+
+            ##############################################
+
+            ax.vlines(
+                np.nanmean(t_minus_half_samples),
+                -100,
+                1.5 * baz_max_flux,
+                linestyles="--",
+                color="k",
+                label="T minus half",
+            )
+            ax.vlines(
+                np.mean(t_plus_half_samples),
+                -100,
+                1.5 * baz_max_flux,
+                linestyles="--",
+                color="k",
+                label="T plus half",
+            )
+
+            if t_max_plot == None:
+                t_max_plot = np.max(x_global)
+
             if t_min_plot == None:
-                if bazin(time_variable, A, B, T_rise, T_fall, t0) > 0.05 * baz_max_flux:
-                    t_min_plot = time_variable
-            if t_max_plot == None and (time_variable > t_max_bazin):
-                if bazin(time_variable, A, B, T_rise, T_fall, t0) < 0.05 * baz_max_flux:
-                    t_max_plot = time_variable
+                print("FAILED TO ESTABLISH A T MIN from the BAZIN FIT...")
 
-        print("Using the Bazin fit to calculate t-1/2 and t+1/2 from the bazin fits")
-
-        bazin_range = np.linspace(np.min(x_global), np.max(x_global), 1000)
-        for sample in flat_samples_bazin:
-            t_minus_half, t_plus_half = None, None
-            A, B, T_rise, T_fall, t0 = sample
-            for time_variable in bazin_range:
-                if t_minus_half == None:
-                    if (
-                        bazin(time_variable, A, B, T_rise, T_fall, t0)
-                        > 0.5 * baz_max_flux
-                    ):
-                        t_minus_half = time_variable
-                if t_plus_half == None and (time_variable > t_max_bazin):
-                    if (
-                        bazin(time_variable, A, B, T_rise, T_fall, t0)
-                        < 0.5 * baz_max_flux
-                    ):
-                        t_plus_half = time_variable
-            t_minus_half_samples = np.append(t_minus_half_samples, t_minus_half)
-            t_plus_half_samples = np.append(t_plus_half_samples, t_plus_half)
-
-        t_minus_half_samples = t_minus_half_samples.astype(float)
-        t_plus_half_samples = t_plus_half_samples.astype(float)
-
-        # #############################################
-        bazin_max = bazin_results[0]
-        bazin_max_err = bazin_results[1]
-        T_rise = bazin_results[2][2]
-        T_rise_lower = bazin_results[2][2] - bazin_results[3][2]
-        T_rise_upper = bazin_results[2][2] - bazin_results[4][2]
-        T_fall = bazin_results[2][3]
-        T_fall_lower = bazin_results[2][3] - bazin_results[3][3]
-        T_fall_upper = bazin_results[2][3] - bazin_results[4][3]
-        T_max = bazin_max
-        T_max_err = bazin_max_err
-        t_minus_half = np.nanmean(t_minus_half_samples)
-        t_minus_half_err = np.nanstd(t_minus_half_samples)
-        t_plus_half = np.nanmean(t_plus_half_samples)
-        t_plus_half_err = np.nanstd(t_plus_half_samples)
-        t_minus_five = t_min_plot
-        t_plus_five = t_max_plot
-
-        results_dict = {
-            "TNS Name": TNS_ID,
-            "risetime": np.nan,
-            "risetime_upper": np.nan,
-            "risetime_lower": np.nan,
-            "T_rise": T_rise,
-            "T_rise_upper": T_rise_upper,
-            "T_rise_lower": T_rise_lower,
-            "T_fall": T_fall,
-            "T_fall_upper": T_fall_upper,
-            "T_fall_lower": T_fall_lower,
-            "T_max": T_max,
-            "T_max_err": T_max_err,
-            "t_minus_half": t_minus_half,
-            "t_minus_half_err": t_minus_half_err,
-            "t_plus_half": t_plus_half,
-            "t_plus_half_err": t_plus_half_err,
-            "t_minus_five": t_minus_five,
-            "t_plus_five": t_plus_five,
-            "T_explode": np.nan,
-            "T_explode_lower": np.nan,
-            "T_explode_upper": np.nan,
-            "fireball_power": np.nan,
-            "fireball_power_lower": np.nan,
-            "fireball_power_upper": np.nan,
-        }
-
-        # SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
-        SNIPER_OUTPUT = pd.concat(
-            [SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True
-        )
-
-        ##############################################
-
-        ax.vlines(
-            np.nanmean(t_minus_half_samples),
-            -100,
-            1.5 * baz_max_flux,
-            linestyles="--",
-            color="k",
-            label="T minus half",
-        )
-        ax.vlines(
-            np.mean(t_plus_half_samples),
-            -100,
-            1.5 * baz_max_flux,
-            linestyles="--",
-            color="k",
-            label="T plus half",
-        )
-
-        if t_max_plot == None:
-            t_max_plot = np.max(x_global)
-
-        if t_min_plot == None:
-            print("FAILED TO ESTABLISH A T MIN from the BAZIN FIT...")
-
-        ax.vlines(
-            t_min_plot,
-            -100,
-            1.5 * baz_max_flux,
-            linestyles="--",
-            color="steelblue",
-            label="tmin_plot",
-        )
-
-        ax.set_ylabel(r" Flux Density [$\rm \mu Jy$]")
-        ax.set_xlabel(r"time [mjd]")
-        ax.set_ylim(-10, 1.4 * baz_max_flux)
-        # removing lightcurve after max light
-
-        lightcurve_data = lightcurve_data.loc[
-            (
-                lightcurve_data["MJD"].astype("float64")
-                <= np.nanmean(t_minus_half_samples)
-            )
-        ]
-
-        lightcurve_data = lightcurve_data.loc[
-            (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 80)
-        ]
-
-        x_global, y_global, y_err_global = (
-            lightcurve_data["MJD"].astype(float),
-            lightcurve_data["uJy"].astype(float),
-            lightcurve_data["duJy"].astype(float),
-        )
-        def_global(x_global, y_global, y_err_global)
-
-        first_guess = t_min_plot - 10
-
-        fireball_results = fit_fireball(
-            priors=[0.01 * baz_max_flux, first_guess, 2],
-            progress=progress,
-            plot=True,
-            object=TNS_ID,
-            nwalkers=nwalkers_fireball,
-            nsteps=nsteps_fireball,
-        )
-
-        x_range = np.linspace(
-            np.min(x_global), baz_tmax(t0, T_rise, T_fall), 200
-        )  # changing xrange to plot rise
-
-        a, T_exp_pow, n = fireball_results[0]
-        if t_min_plot == None:
-            t_min_plot = T_exp_pow - 30
-
-        flat_samples_fireball = fireball_results[3]
-        inds = np.random.randint(len(flat_samples_fireball), size=100)
-        for ind in inds:
-            sample = flat_samples_fireball[ind]
-            ax.plot(
-                x_range,
-                rise_mjd_fit(x_range, *sample),
-                "mediumorchid",
-                alpha=0.1,
+            ax.vlines(
+                t_min_plot,
+                -100,
+                1.5 * baz_max_flux,
+                linestyles="--",
+                color="steelblue",
+                label="tmin_plot",
             )
 
-        T_explode = fireball_results[0][1]
-        T_explode_lower = fireball_results[0][1] - fireball_results[1][1]
-        T_explode_upper = fireball_results[0][1] - fireball_results[2][1]
-        risetime = bazin_max - T_explode
-        risetime_err_lower = T_explode_lower - bazin_max_err
-        risetime_err_upper = T_explode_upper + bazin_max_err
+            ax.set_ylabel(r" Flux Density [$\rm \mu Jy$]")
+            ax.set_xlabel(r"time [mjd]")
+            ax.set_ylim(-10, 1.4 * baz_max_flux)
+            # removing lightcurve after max light
 
-        mean_flux = np.nanmean(bazin_results[4])
-        std_flux = np.nanstd(bazin_results[4])
+            lightcurve_data = lightcurve_data.loc[
+                (
+                    lightcurve_data["MJD"].astype("float64")
+                    <= np.nanmean(t_minus_half_samples)
+                )
+            ]
 
-        # Marking on T Explode
-        ax.vlines(
-            T_explode,
-            -100,
-            1.5 * baz_max_flux,
-            linestyles="--",
-            color="r",
-            label="T Explosion",
-        )
+            lightcurve_data = lightcurve_data.loc[
+                (lightcurve_data["MJD"].astype("float64") >= t_min_plot - 80)
+            ]
 
-        # Marking on T Max
-        ax.vlines(
-            bazin_max,
-            -100,
-            1.5 * baz_max_flux,
-            linestyles="--",
-            color="b",
-            label="Bazin Maximum",
-        )
+            x_global, y_global, y_err_global = (
+                lightcurve_data["MJD"].astype(float),
+                lightcurve_data["uJy"].astype(float),
+                lightcurve_data["duJy"].astype(float),
+            )
+            def_global(x_global, y_global, y_err_global)
 
-        ax.set_title(TNS_ID)
-        ax.legend()
-        ax.set_xlim(t_min_plot - 80, t_max_plot + 80)
+            first_guess = t_min_plot - 10
 
-        fig.savefig(output_dir + "/combined_output/" + TNS_ID + ".png")
-        plt.close()
+            fireball_results = fit_fireball(
+                priors=[0.01 * baz_max_flux, first_guess, 2],
+                progress=progress,
+                plot=True,
+                object=TNS_ID,
+                nwalkers=nwalkers_fireball,
+                nsteps=nsteps_fireball,
+            )
 
-        # Calculating the rest of the params for results dict
+            x_range = np.linspace(
+                np.min(x_global), baz_tmax(t0, T_rise, T_fall), 200
+            )  # changing xrange to plot rise
 
-        fireball_power = fireball_results[0][2]
-        fireball_power_lower = fireball_results[0][2] - fireball_results[1][2]
-        fireball_power_upper = fireball_results[0][1] - fireball_results[2][1]
+            a, T_exp_pow, n = fireball_results[0]
+            if t_min_plot == None:
+                t_min_plot = T_exp_pow - 30
 
-        results_dict = {
-            "TNS Name": TNS_ID,
-            "risetime": risetime,
-            "risetime_upper": risetime_err_upper,
-            "risetime_lower": risetime_err_lower,
-            "T_rise": T_rise,
-            "T_rise_upper": T_rise_upper,
-            "T_rise_lower": T_rise_lower,
-            "T_fall": T_fall,
-            "T_fall_upper": T_fall_upper,
-            "T_fall_lower": T_fall_lower,
-            "T_max": T_max,
-            "T_max_err": T_max_err,
-            "t_minus_half": t_minus_half,
-            "t_minus_half_err": t_minus_half_err,
-            "t_plus_half": t_plus_half,
-            "t_plus_half_err": t_plus_half_err,
-            "t_minus_five": t_minus_five,
-            "t_plus_five": t_plus_five,
-            "T_explode": T_explode,
-            "T_explode_lower": T_explode_lower,
-            "T_explode_upper": T_explode_upper,
-            "fireball_power": fireball_power,
-            "fireball_power_lower": fireball_power_lower,
-            "fireball_power_upper": fireball_power_upper,
-        }
-        SNIPER_OUTPUT = SNIPER_OUTPUT[
-            SNIPER_OUTPUT["TNS Name"] != TNS_ID
-        ]  # removing bazin only results from table
+            flat_samples_fireball = fireball_results[3]
+            inds = np.random.randint(len(flat_samples_fireball), size=100)
+            for ind in inds:
+                sample = flat_samples_fireball[ind]
+                ax.plot(
+                    x_range,
+                    rise_mjd_fit(x_range, *sample),
+                    "mediumorchid",
+                    alpha=0.1,
+                )
 
-        # SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
-        SNIPER_OUTPUT = pd.concat(
-            [SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True
-        )
+            T_explode = fireball_results[0][1]
+            T_explode_lower = fireball_results[0][1] - fireball_results[1][1]
+            T_explode_upper = fireball_results[0][1] - fireball_results[2][1]
+            risetime = bazin_max - T_explode
+            risetime_err_lower = T_explode_lower - bazin_max_err
+            risetime_err_upper = T_explode_upper + bazin_max_err
 
-        print(f"{TNS_ID} parameters")
-        print("risetime =", risetime)
+            mean_flux = np.nanmean(bazin_results[4])
+            std_flux = np.nanstd(bazin_results[4])
 
-        SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
-        plt.close("all")
-        gc.collect()
-    except ValueError or TypeError as e:
-        print("Oops! Sniper failed for ", TNS_ID)
-        print(e)
-        SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
+            # Marking on T Explode
+            ax.vlines(
+                T_explode,
+                -100,
+                1.5 * baz_max_flux,
+                linestyles="--",
+                color="r",
+                label="T Explosion",
+            )
+
+            # Marking on T Max
+            ax.vlines(
+                bazin_max,
+                -100,
+                1.5 * baz_max_flux,
+                linestyles="--",
+                color="b",
+                label="Bazin Maximum",
+            )
+
+            ax.set_title(TNS_ID)
+            ax.legend()
+            ax.set_xlim(t_min_plot - 80, t_max_plot + 80)
+
+            fig.savefig(output_dir + "/combined_output/" + TNS_ID + ".png")
+            plt.close()
+
+            # Calculating the rest of the params for results dict
+
+            fireball_power = fireball_results[0][2]
+            fireball_power_lower = fireball_results[0][2] - fireball_results[1][2]
+            fireball_power_upper = fireball_results[0][1] - fireball_results[2][1]
+
+            results_dict = {
+                "TNS Name": TNS_ID,
+                "risetime": risetime,
+                "risetime_upper": risetime_err_upper,
+                "risetime_lower": risetime_err_lower,
+                "T_rise": T_rise,
+                "T_rise_upper": T_rise_upper,
+                "T_rise_lower": T_rise_lower,
+                "T_fall": T_fall,
+                "T_fall_upper": T_fall_upper,
+                "T_fall_lower": T_fall_lower,
+                "T_max": T_max,
+                "T_max_err": T_max_err,
+                "t_minus_half": t_minus_half,
+                "t_minus_half_err": t_minus_half_err,
+                "t_plus_half": t_plus_half,
+                "t_plus_half_err": t_plus_half_err,
+                "t_minus_five": t_minus_five,
+                "t_plus_five": t_plus_five,
+                "T_explode": T_explode,
+                "T_explode_lower": T_explode_lower,
+                "T_explode_upper": T_explode_upper,
+                "fireball_power": fireball_power,
+                "fireball_power_lower": fireball_power_lower,
+                "fireball_power_upper": fireball_power_upper,
+            }
+            SNIPER_OUTPUT = SNIPER_OUTPUT[
+                SNIPER_OUTPUT["TNS Name"] != TNS_ID
+            ]  # removing bazin only results from table
+
+            # SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
+            SNIPER_OUTPUT = pd.concat(
+                [SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True
+            )
+
+            print(f"{TNS_ID} parameters")
+            print("risetime =", risetime)
+
+            SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
+            plt.close("all")
+            gc.collect()
+        except ValueError or TypeError as e:
+            print("Oops! Sniper failed for ", TNS_ID)
+            print(e)
+            SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
