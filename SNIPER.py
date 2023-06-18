@@ -31,11 +31,82 @@ import logging
 import warnings
 from pathlib import Path
 
-global data
+my_file = Path("SNIPER_config.yml")
+if my_file.is_file():
+    with open("SNIPER_config.yml", "r") as ymlfile:
+        cfg = yaml.safe_load(ymlfile)
+else:
+    print(
+        "SNIPER Settings YAML does not exist - creating file in current working directory"
+    )
+    d = {
+        "data": {
+            "data_dir": "Your Data Directory",
+            "IAU_Names": "IAU Names csv",
+            "output_dir": os.getcwd(),
+            "flux_unc_cut": 100,
+        },
+        "mcmc": {
+            "mjd_minus": 300,
+            "mjd_plus": 200,
+            "nwalkers_bazin": 50,
+            "nsteps_bazin": 1e3,
+            "nwalkers_fireball": 50,
+            "nsteps_fireball": 1e3,
+        },
+        "progress": {"plots": True, "progress_bar": True},
+    }
+    with open("SNIPER_config.yml", "w") as yaml_file:
+        yaml.dump(d, yaml_file, default_flow_style=False)
+
+MJD_minus = int(float(cfg["mcmc"]["mjd_minus"]))
+MJD_plus = int(float(cfg["mcmc"]["mjd_plus"]))
+nwalkers_bazin = int(float(cfg["mcmc"]["nwalkers_bazin"]))
+nsteps_bazin = int(float(cfg["mcmc"]["nsteps_bazin"]))
+flux_unc_cut = int(float(cfg["data"]["flux_unc_cut"]))
+
+nwalkers_fireball = int(float(cfg["mcmc"]["nwalkers_fireball"]))
+nsteps_fireball = int(float(cfg["mcmc"]["nsteps_fireball"]))
+
+progress = cfg["progress"]["progress_bar"]
+plot = cfg["progress"]["plots"]
+
+output_dir = cfg["data"]["output_dir"] + "SNIPER_Output"
+
+
+# Creating output directories if they do not already exist
+
+if os.path.isdir(output_dir + "/corner") == False:
+    print("No corner plot directory - making one!")
+    os.makedirs(output_dir + "/corner/")
+
+if os.path.isdir(output_dir + "/overplot/") == False:
+    print("No overplot plot directory - making one!")
+    os.makedirs(output_dir + "/overplot/")
+
+if os.path.isdir(output_dir + "/scatter/") == False:
+    print("No scatter plot directory - making one!")
+    os.makedirs(output_dir + "/scatter/")
+
+if os.path.isdir(output_dir + "/combined_output/") == False:
+    print("No combined_output plot directory - making one!")
+    os.makedirs(output_dir + "/combined_output/")
+
+
+IAU_list = pd.read_csv(cfg["data"]["IAU_Names"], header=None)
+IAU_list.columns = ["IAU_NAME"]
+lc_directory = cfg["data"]["data_dir"]
+
+global x_global, y_global, y_err_global
 
 
 def def_global(x, y, y_err):
-    data = np.array([x, y, y_err]).astype("float64")
+    global x_global
+    global y_global
+    global y_err_global
+    x_global = np.array(x).astype("float64")
+    y_global = np.array(y).astype("float64")
+    y_err_global = np.array(y_err).astype("float64")
 
 
 def Lambobstorest(lambda_obs, Z):
@@ -189,11 +260,10 @@ def fit_bazin(**kwargs):
     pos = [pos1, pos2, pos3, pos4, pos5]
     pos = np.transpose(pos)
 
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
-    sampler.run_mcmc(pos, nsteps, progress=progress)
+    # sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
+    # sampler.run_mcmc(pos, nsteps, progress=progress)
 
     # with MPIPool() as pool:
-    #     # with Pool() as pool:
     #     sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
     #     sampler.run_mcmc(pos, nsteps, progress=True)
 
@@ -341,12 +411,13 @@ def fit_fireball(**kwargs):
     pos[:, 1] = float(priors[1]) + 100 * np.random.randn(nwalkers)
     pos[:, 2] = float(priors[2]) + 0.1 * np.random.randn(nwalkers)
 
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_fireball)
-    sampler.run_mcmc(pos, nsteps, progress=progress)
+    # sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_fireball)
+    # sampler.run_mcmc(pos, nsteps, progress=progress)
 
     # with MPIPool() as pool:
-    #     # with Pool() as pool:
-    #     sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_fireball, pool=pool)
+    #     sampler = emcee.EnsembleSampler(
+    #         nwalkers, ndim, lnprobline_fireball, args=(t_min, t_max), pool=pool
+    #     )
     #     sampler.run_mcmc(pos, nsteps, progress=True)
 
     samples = sampler.get_chain()
@@ -510,44 +581,41 @@ if __name__ == "__main__":
 
     SNIPER_OUTPUT = pd.DataFrame()
 
-    for TNS_ID in tqdm(IAU_list["IAU_NAME"], leave=False):
-        lightcurve_data = []
-        df = []
-        t_minus_half_samples, t_plus_half_samples = [], []
-        try:
-            global data
-            # t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == TNS_ID, "t_guess"]
-            # print(f"Working on {TNS_ID}")
-            f = []
-            f = lc_directory + TNS_ID + "/" + TNS_ID + ".o.1.00days.lc.txt"
-            cols = [
-                [
-                    "MJD",
-                    "m",
-                    "dm",
-                    "uJy",
-                    "duJy",
-                    "F",
-                    "err",
-                    "chi/N",
-                    "RA",
-                    "Dec",
-                    "x",
-                    "y",
-                    "maj",
-                    "min",
-                    "phi",
-                    "apfit",
-                    "mag5sig",
-                    "Sky",
-                    "Obs",
-                    "mask",
-                ]
+for object in tqdm(IAU_list["IAU_NAME"], leave=False):
+    try:
+        # t_guess = IAU_list.loc[IAU_list["IAU_NAME"] == object, "t_guess"]
+        print(f"Working on {object}")
+        f = []
+        f = lc_directory + object + "/" + object + ".o.1.00days.lc.txt"
+        cols = [
+            [
+                "MJD",
+                "m",
+                "dm",
+                "uJy",
+                "duJy",
+                "F",
+                "err",
+                "chi/N",
+                "RA",
+                "Dec",
+                "x",
+                "y",
+                "maj",
+                "min",
+                "phi",
+                "apfit",
+                "mag5sig",
+                "Sky",
+                "Obs",
+                "mask",
             ]
-            df = pd.read_csv(f, delim_whitespace=True)
-            df = df.filter(("MJD", "uJy", "duJy"), axis=1)
-            df.drop(df[df.duJy > flux_unc_cut].index, inplace=True)
-            df = df.dropna()
+        ]
+        df = []
+        df = pd.read_csv(f, delim_whitespace=True)
+        df = df.filter(("MJD", "uJy", "duJy"), axis=1)
+        df.drop(df[df.duJy > flux_unc_cut].index, inplace=True)
+        df = df.dropna()
 
             time = np.array(df.MJD)
             flux = np.array(df.uJy)
