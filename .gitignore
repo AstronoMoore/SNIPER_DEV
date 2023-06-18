@@ -1,0 +1,8 @@
+.DS_Store
+.DS_Store?
+._*
+ATLAS_TDEs/
+SNIPER_OUTPUT/
+*.yml
+*.txt
+*.csv

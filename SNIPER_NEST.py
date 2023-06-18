@@ -31,6 +31,11 @@ import logging
 import warnings
 from pathlib import Path
 
+import numpy as np
+import dynesty
+from dynesty import NestedSampler
+from dynesty import utils as dyfunc
+
 global data
 
 
@@ -189,18 +194,33 @@ def fit_bazin(**kwargs):
     pos = [pos1, pos2, pos3, pos4, pos5]
     pos = np.transpose(pos)
 
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
-    sampler.run_mcmc(pos, nsteps, progress=progress)
+    # sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
+    # sampler.run_mcmc(pos, nsteps, progress=progress)
 
     # with MPIPool() as pool:
     #     # with Pool() as pool:
     #     sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
     #     sampler.run_mcmc(pos, nsteps, progress=True)
 
-    samples = sampler.get_chain()
-    flat_samples = sampler.get_chain(
-        discard=int(nsteps * 0.4), flat=True, thin=int(nsteps * 0.01)
-    )
+    # samples = sampler.get_chain()
+    # flat_samples = sampler.get_chain(
+    #     discard=int(nsteps * 0.4), flat=True, thin=int(nsteps * 0.01)
+    # )
+
+
+    # NESTED SAMPLING 
+
+    bounds = [(0, 10), (0, 10)] # bounds on each parameter
+
+    # Set up the nested sampler
+    sampler = NestedSampler(lnprobline_bazin, prior_transform=bazin, ndim=ndim)
+
+    # Run the nested sampling algorithm
+    sampler.run_nested()
+
+    # Get the results
+    results = sampler.results
+
 
     best_params = np.zeros(ndim)
     for i in range(ndim):
