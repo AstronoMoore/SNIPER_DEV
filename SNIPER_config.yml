@@ -1,15 +1,15 @@
 data:
-  data_dir: /Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS_TDEs/
+  data_dir: /Users/thomasmoore/Desktop/SNIPER_DEV/ATLAS/
   output_dir: /Users/thomasmoore/Desktop/SNIPER_DEV/
   flux_unc_cut: 80
-  IAU_Names: tde_list_good.txt
+  IAU_Names: text.txt
 mcmc:
   mjd_minus: 300
   mjd_plus: 300
-  nsteps_bazin: 2e2
-  nsteps_fireball: 2e2
-  nwalkers_bazin: 30
-  nwalkers_fireball: 30
+  nsteps_bazin: 1e6
+  nsteps_fireball: 1e6
+  nwalkers_bazin: 20
+  nwalkers_fireball: 20
 progress:
   plots: True
-  progress_bar: False
+  progress_bar: True
