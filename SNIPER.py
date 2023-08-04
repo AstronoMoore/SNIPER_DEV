@@ -752,7 +752,6 @@ for TNS_ID in tqdm(IAU_list["IAU_NAME"], leave=False):
         print(f"Working on {TNS_ID}")
         f = []
         f = lc_directory + TNS_ID + "/" + TNS_ID + ".o.1.00days.lc.txt"
-                "duJy",
         df = []
         df = pd.read_csv(f, delim_whitespace=True)
         df = df.filter(("MJD", "uJy", "duJy"), axis=1)

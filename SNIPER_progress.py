@@ -193,7 +193,7 @@ def lnpriorline_fireball(p):
     a, T_exp_pow, n = p
     if (
         1 < a < 0.4 * np.max(y_global)
-        and 1.9 < n < 2.1
+        and 0.3 < n < 2
         and T_exp_pow > np.min(x_global)
         and T_exp_pow < np.max(x_global)
     ):
@@ -237,164 +237,6 @@ def AB_mag_err(flux, dflux):
 def flux_to_ABmag(flux):
     mag = 2.5 * (23 - np.log10(float(flux) * 1e-6)) - 48.6
     return mag
-
-
-def fit_bazin(**kwargs):
-    global x_global
-    global y_global
-    global y_err_global
-    print("Fitting a Bazin Function")
-    priors = kwargs.get("priors", [0.1 * np.max(y_global), 0, 3, 4, np.mean(x_global)])
-    # priors = np.array(priors)
-    nwalkers = kwargs.get("nwalkers", int(100))
-    nsteps = kwargs.get("nsteps", int(500))
-    progress = kwargs.get("progress", True)
-    plot = kwargs.get("plot", False)
-    object = kwargs.get("object", "")
-
-    ndim = 5
-    nwalkers, ndim = int(nwalkers), int(5)
-    nsteps = int(nsteps)
-    # pos = priors + 1 * np.random.randn(nwalkers, ndim)
-    # A, B, T_rise, T_fall, t0
-
-    pos = np.zeros((nwalkers, ndim))
-    pos1 = float(priors[0]) + 10 * np.random.randn(nwalkers)
-    pos2 = float(priors[1]) + 1 * np.random.randn(nwalkers)
-    pos3 = float(priors[2]) + 2 * np.random.randn(nwalkers)
-    pos4 = float(priors[3]) + 2 * np.random.randn(nwalkers)
-    pos5 = float(priors[4]) + 5 * np.random.randn(nwalkers)
-    pos = [pos1, pos2, pos3, pos4, pos5]
-    pos = np.transpose(pos)
-
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
-    sampler.run_mcmc(pos, nsteps, progress=progress)
-
-    # with MPIPool() as pool:
-    #     sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin, pool=pool)
-    #     sampler.run_mcmc(pos, nsteps, progress=True)
-
-    samples = sampler.get_chain()
-    flat_samples = sampler.get_chain(
-        discard=int(nsteps * 0.4), flat=True, thin=int(nsteps * 0.01)
-    )
-
-    best_params = np.zeros(ndim)
-    for i in range(ndim):
-        best_params[i] = np.percentile(flat_samples[:, i], [50])
-    A, B, T_rise, T_fall, t0 = best_params
-    bazin_maximum = baz_tmax(t0, T_rise, T_fall)
-
-    if plot == True:
-        labels = ["A", "B", "T_rise", "T_fall", "t0"]
-
-        plt.figure(dpi=300)
-        fig = corner.corner(
-            flat_samples,
-            labels=labels,
-            quantiles=[0.16, 0.5, 0.84],
-            show_titles=True,
-            title_kwargs={"fontsize": 12},
-        )
-        plt.savefig(output_dir + "/corner/" + object + "_bazin_corner_plot.png")
-
-        plt.figure(dpi=200)
-        fig, axes = plt.subplots(5, figsize=(10, 7), sharex=True)
-        samples = sampler.get_chain()
-        labels = labels
-        for i in range(ndim):
-            ax = axes[i]
-            ax.plot(samples[:, :, i], "k", alpha=0.01)
-            ax.set_xlim(0, len(samples))
-            ax.set_ylabel(labels[i - 1])
-            ax.yaxis.set_label_coords(-0.1, 0.5)
-
-        axes[-1].set_xlabel("step number")
-        plt.savefig(output_dir + "/scatter/" + object + "_bazin_scatter.png")
-        plt.close()
-
-    A = flat_samples[:, 0]
-    B = flat_samples[:, 1]
-    T_rise = flat_samples[:, 2]
-    T_fall = flat_samples[:, 3]
-    t0 = flat_samples[:, 4]
-
-    t_max_samples = baz_tmax(t0, T_rise, T_fall)
-    flux_max_samples = bazin(t_max_samples, A, B, T_rise, T_fall, t0)
-
-    time_max_mcmc = np.nanmean(t_max_samples)
-    time_max_mcmc_err = np.nanstd(t_max_samples)
-
-    best_params = np.zeros(ndim)
-    lower_quartile = np.zeros(ndim)
-    upper_quartile = np.zeros(ndim)
-
-    for i in range(ndim):
-        best_params[i] = np.percentile(flat_samples[:, i], [50])
-        lower_quartile[i] = np.percentile(flat_samples[:, i], [16])
-        upper_quartile[i] = np.percentile(flat_samples[:, i], [84])
-
-    A, B, T_rise, T_fall, t0 = best_params
-    A_upper, B_upper, T_rise_upper, T_fall_upper, t0_upper = upper_quartile
-    A_lower, B_lower, T_rise_lower, T_fall_lower, t0_lower = lower_quartile
-
-    if plot == True:
-        # overplotting on graph
-        plt.figure(dpi=300)
-        inds = np.random.randint(len(flat_samples), size=100)
-        x0 = np.linspace(np.min(x_global), np.max(x_global), 300)
-        for ind in inds:
-            sample = flat_samples[ind]
-            plt.plot(x0, bazin(x0, *sample), "deepskyblue", alpha=0.1)
-        plt.plot([], [], color="deepskyblue", alpha=0.9, label="Bazin Evaluations")
-
-        plt.errorbar(
-            x_global,
-            y_global,
-            y_err_global,
-            fmt=".",
-            color="black",
-            capsize=0,
-            label="ATLAS o-band",
-        )
-
-        plt.ylim(np.min(y_global) * 0.9, np.max(y_global) * 1.1)
-        plt.xlim(np.min(x_global) * 0.999, np.max(x_global) * 1.001)
-
-        plt.ylabel(r" Flux Density [$\rm \mu Jy$]")
-        plt.xlabel(r"time [mjd]")
-        plt.legend(frameon=False)
-        plt.vlines(
-            bazin_maximum,
-            -50,
-            np.max(y_global) * 1.3,
-            color="gray",
-            alpha=0.9,
-            linestyle="--",
-        )
-        plt.vlines(
-            time_max_mcmc,
-            -50,
-            np.max(y_global) * 1.3,
-            color="orange",
-            alpha=0.9,
-            linestyle="--",
-        )
-        plt.savefig(output_dir + "/overplot/" + object + "_bazin_overplot.png")
-
-    plt.close()
-    print("best params", best_params)
-    gc.collect()
-    return (
-        time_max_mcmc,
-        time_max_mcmc_err,
-        best_params,
-        upper_quartile,
-        lower_quartile,
-        t_max_samples,
-        flux_max_samples,
-        flat_samples,
-    )
 
 
 def fit_bazin(**kwargs):
@@ -632,9 +474,9 @@ def fit_fireball(**kwargs):
             sample = flat_samples[ind]
             plt.plot(x0, rise_mjd_fit(x0, *sample), "mediumorchid", alpha=0.1)
         plt.errorbar(
-            lightcurve_data["MJD"],
-            lightcurve_data["uJy"],
-            yerr=lightcurve_data["duJy"],
+            x_global,
+            y_global,
+            yerr=y_err_global,
             fmt=".k",
             capsize=0,
             label="rising points",
