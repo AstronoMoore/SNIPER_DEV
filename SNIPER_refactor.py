@@ -99,18 +99,6 @@ IAU_list = pd.read_csv(cfg["data"]["IAU_Names"], header=None)
 IAU_list.columns = ["IAU_NAME"]
 lc_directory = cfg["data"]["data_dir"]
 
-global x_global, y_global, y_err_global
-
-
-def def_global(x, y, y_err):
-    global x_global
-    global y_global
-    global y_err_global
-    x_global = np.array(x).astype("float64")
-    y_global = np.array(y).astype("float64")
-    y_err_global = np.array(y_err).astype("float64")
-
-
 def Lambobstorest(lambda_obs, Z):
     lambda_rest = np.divide(lambda_obs, (1.0 + Z))
     return lambda_rest
@@ -137,7 +125,7 @@ def rise_mjd_fit(t, a, T_exp_pow, n):
     return y
 
 
-def chisq_bazin(p):
+def chisq_bazin(x_global,y_global,y_err_global,p):
     A, B, T_rise, T_fall, t0 = p[0], p[1], p[2], p[3], p[4]
     return np.sum(
         ((y_global - (bazin(x_global, A, B, T_rise, T_fall, t0))) / y_err_global) ** 2
@@ -177,14 +165,14 @@ def lnprobline_bazin(p):
 
 # Doing the same treatment for the fireball model
 #  Inputs  = t, a, T_exp_pow, n
-def chisq_fireball(p):
+def chisq_fireball(x_global,y_global,y_err_global,p):
     a, T_exp_pow, n = p[0], p[1], p[2]
     return np.sum(
         ((y_global - (rise_mjd_fit(x_global, a, T_exp_pow, n))) / y_err_global) ** 2
     )
 
 
-def lnpriorline_fireball(p):
+def lnpriorline_fireball(x_global,y_global,y_err_global,p):
     a, T_exp_pow, n = p
     if (
         1 < a < 0.4 * np.max(y_global)
@@ -196,16 +184,16 @@ def lnpriorline_fireball(p):
     return -np.inf
 
 
-def lnlikeline_fireball(p):
-    chisq = chisq_fireball(p)
+def lnlikeline_fireball(x_global,y_global,y_err_global,p):
+    chisq = chisq_fireball(x_global,y_global,y_err_global,p)
     return -0.5 * chisq
 
 
-def lnprobline_fireball(p):
-    lp = lnpriorline_fireball(p)
+def lnprobline_fireball(x_global,y_global,y_err_global,p):
+    lp = lnpriorline_fireball(x_global,y_global,y_err_global,p)
     if not np.isfinite(lp):
         return -np.inf
-    ln_like = +lnlikeline_fireball(p)
+    ln_like = +lnlikeline_fireball(x_global,y_global,y_err_global,p)
     if math.isnan(ln_like):
         return -np.inf
     return lp + ln_like
@@ -214,20 +202,12 @@ def lnprobline_fireball(p):
 def baz_tmax(t0, T_rise, T_fall):
     return t0 + T_rise * np.log((T_fall / T_rise) - 1)
 
-
 def baz_tmax(t0, T_rise, T_fall):
     return t0 + T_rise * np.log((T_fall / (T_rise) - 1))
-
-
-# def rise_mjd_fit(t, a, T_exp_pow, n):
-#    y = np.where(t <= T_exp_pow, 0, a * (t - T_exp_pow) ** n)
-#    return y
-
 
 def AB_mag_err(flux, dflux):
     mag_err = 2.5 / np.log(10.0) * abs(dflux) / abs(flux)
     return mag_err
-
 
 def flux_to_ABmag(flux):
     mag = 2.5 * (23 - np.log10(float(flux) * 1e-6)) - 48.6
@@ -237,9 +217,7 @@ x_global = None
 y_global = None
 y_err_global = None
 
-
-def fit_bazin(**kwargs):
-    global x_global, y_global, y_err_global
+def fit_bazin(x_global, y_global, y_err_global, output_dir,**kwargs):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
@@ -393,9 +371,7 @@ def fit_bazin(**kwargs):
 
 
 
-def fit_fireball(**kwargs):
-    global x_global, y_global, y_err_global, output_dir
-
+def fit_fireball(x_global, y_global, y_err_global, output_dir, **kwargs):
     priors = kwargs.get("priors", [1, np.mean(x_global), 2])
     # print(f'No priors given = assumning {priors}')
     nwalkers = kwargs.get("nwalkers", int(1000))
@@ -636,7 +612,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             lightcurve_data["uJy"].astype("float64"),
             lightcurve_data["duJy"].astype("float64"),
         )
-        def_global(x_global, y_global, y_err_global)
 
         fig, ax = plt.subplots(dpi=300)
         ax.errorbar(
@@ -648,9 +623,7 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             fmt=".",
         )
 
-        def_global(x_global, y_global, y_err_global)
-
-        bazin_results = fit_bazin(
+        bazin_results = fit_bazin(x_global,y_global,y_err_global,
             progress=progress,
             plot=True,
             object=object,
@@ -815,7 +788,6 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             lightcurve_data["uJy"].astype(float),
             lightcurve_data["duJy"].astype(float),
         )
-        def_global(x_global, y_global, y_err_global)
 
         first_guess = t_min_plot - 10
 

@@ -72,6 +72,7 @@ MJD_plus = int(float(cfg["mcmc"]["mjd_plus"]))
 nwalkers_bazin = int(float(cfg["mcmc"]["nwalkers_bazin"]))
 nsteps_bazin = int(float(cfg["mcmc"]["nsteps_bazin"]))
 flux_unc_cut = int(float(cfg["data"]["flux_unc_cut"]))
+do_fireball = bool(float(cfg["mcmc"]["do_fireball"]))
 
 nwalkers_fireball = int(float(cfg["mcmc"]["nwalkers_fireball"]))
 nsteps_fireball = int(float(cfg["mcmc"]["nsteps_fireball"]))
@@ -192,12 +193,19 @@ def chisq_fireball(p):
 def lnpriorline_fireball(p):
     a, T_exp_pow, n = p
     if (
-        1 < a < 0.4 * np.max(y_global)
-        and 0.3 < n < 2
-        and T_exp_pow > np.min(x_global)
-        and T_exp_pow < np.max(x_global)
+        1 < a < np.max(y_global)
+        and 1.05 < n < 2.2
+        and np.min(x_global) < T_exp_pow < np.max(x_global)
     ):
+        #print(np.min(x_global),T_exp_pow,np.max(x_global))
         return 0
+
+    if T_exp_pow < np.min(x_global):
+        return -np.inf
+
+    
+    if T_exp_pow > np.max(x_global):
+        return -np.inf
     return -np.inf
 
 
@@ -395,6 +403,8 @@ def fit_bazin(**kwargs):
         flux_max_samples,
         flat_samples,
     )
+
+
 
 
 def fit_fireball(**kwargs):
@@ -641,7 +651,17 @@ if __name__ == "__main__":
             t_plus_half_samples[i] = t_guess + MJD_plus
             
             #fit_bazin(**kwargs)
+            print('buring Bazin')
             bazin_results = fit_bazin(
+            progress=progress,
+            plot=False,
+            object=TNS_ID,
+            nwalkers=round(nwalkers_bazin/2),
+            nsteps=round(nsteps_bazin/2),
+            )
+            print('Running Bazin')
+            bazin_results = fit_bazin(
+            priors = bazin_results[3],
             progress=progress,
             plot=True,
             object=TNS_ID,
@@ -716,31 +736,13 @@ if __name__ == "__main__":
             T_max_err = bazin_max_err
             t_minus_five = t_min_plot
             t_plus_five = t_max_plot
-
-
-            df_new = df_new.loc[df_new["MJD"].astype("float64") <= t_minus_half]
-            df_new = df_new.loc[df_new["MJD"].astype("float64") >= t_min_plot - 150]
-
-            x_global = df_new["MJD"].astype(float)
-            y_global = df_new["uJy"].astype(float)
-            y_err_global = df_new["duJy"].astype(float)
-
-            first_guess = t_min_plot - 10
-            fireball_results = fit_fireball(
-                priors=[0.01 * baz_max_flux, first_guess, 2],
-                progress=progress,
-                plot=True,
-                object=TNS_ID,
-                nwalkers=nwalkers_fireball,
-                nsteps=nsteps_fireball,
-            )
-
+            max_flux = np.nanmean(bazin_results[6])
+            flux_err = np.nanstd(bazin_results[6])
 
             results_dict = {
                 "TNS Name": TNS_ID,
-                "risetime": np.nan,
-                "risetime_upper": np.nan,
-                "risetime_lower": np.nan,
+                "flux": max_flux, 
+                "flux_err": flux_err,
                 "T_rise": T_rise,
                 "T_rise_upper": T_rise_upper,
                 "T_rise_lower": T_rise_lower,
@@ -754,18 +756,95 @@ if __name__ == "__main__":
                 "t_plus_half": t_plus_half,
                 "t_plus_half_err": t_plus_half_err,
                 "t_minus_five": t_minus_five,
-                "t_plus_five": t_plus_five,
-                "T_explode": np.nan,
-                "T_explode_lower": np.nan,
-                "T_explode_upper": np.nan,
-                "fireball_power": np.nan,
-                "fireball_power_lower": np.nan,
-                "fireball_power_upper": np.nan,
+                "t_plus_five": t_plus_five
             }
 
             SNIPER_OUTPUT = pd.concat([SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True)
+            SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
 
 
+            if do_fireball == True: 
+                df_new = df_new.loc[df_new["MJD"].astype("float64") <= t_minus_half]
+                df_new = df_new.loc[df_new["MJD"].astype("float64") >= t_min_plot - 50]
+
+                x_global = df_new["MJD"].astype(float)
+                y_global = df_new["uJy"].astype(float)
+                y_err_global = df_new["duJy"].astype(float)
+
+                first_guess = t_min_plot - 10
+                print('buring fireball')
+                fireball_results = fit_fireball(
+                    priors=[0.1 * baz_max_flux, first_guess, 2],
+                    progress=progress,
+                    plot=False,
+                    object=TNS_ID,
+                    nwalkers=round(nwalkers_fireball/2),
+                    nsteps=round(nsteps_fireball/2),
+                )
+                print('running fireball')
+                fireball_results = fit_fireball(
+                    priors=fireball_results[0],
+                    progress=progress,
+                    plot=True,
+                    object=TNS_ID,
+                    nwalkers=nwalkers_fireball,
+                    nsteps=nsteps_fireball,
+                )
+
+                T_explode = fireball_results[0][1]
+                T_explode_lower = fireball_results[0][1] - fireball_results[1][1]
+                T_explode_upper = fireball_results[0][1] - fireball_results[2][1]
+
+                print('T explode',T_explode,T_explode_lower,T_explode_upper)
+
+                risetime = bazin_max - T_explode
+                risetime_err_lower =  - np.sqrt(np.abs(T_explode_lower) **2 + bazin_max_err**2)
+                risetime_err_upper = np.sqrt(np.abs(T_explode_upper) **2 + bazin_max_err**2)
+                print('risetime',risetime,risetime_err_lower,risetime_err_upper)
+
+
+
+                fireball_power = fireball_results[0][2]
+                fireball_power_lower = fireball_results[0][2] - fireball_results[1][2]
+                fireball_power_upper = fireball_results[0][1] - fireball_results[2][1]
+
+                results_dict = {
+                    "TNS Name": TNS_ID,
+                    "risetime": risetime,
+                    "risetime_upper": risetime_err_upper,
+                    "risetime_lower": risetime_err_lower,
+                    "flux": max_flux, 
+                    "flux_err": flux_err,
+                    "T_rise": T_rise,
+                    "T_rise_upper": T_rise_upper,
+                    "T_rise_lower": T_rise_lower,
+                    "T_fall": T_fall,
+                    "T_fall_upper": T_fall_upper,
+                    "T_fall_lower": T_fall_lower,
+                    "T_max": T_max,
+                    "T_max_err": T_max_err,
+                    "t_minus_half": t_minus_half,
+                    "t_minus_half_err": t_minus_half_err,
+                    "t_plus_half": t_plus_half,
+                    "t_plus_half_err": t_plus_half_err,
+                    "t_minus_five": t_minus_five,
+                    "t_plus_five": t_plus_five,
+                    "T_explode": T_explode,
+                    "T_explode_lower": T_explode_lower,
+                    "T_explode_upper": T_explode_upper,
+                    "fireball_power": fireball_power,
+                    "fireball_power_lower": fireball_power_lower,
+                    "fireball_power_upper": fireball_power_upper,
+                }
+
+                SNIPER_OUTPUT = pd.concat([SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True)
+                SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
+
+                print(f"{TNS_ID} parameters")
+                print(f"risetime ={risetime} + {risetime_err_upper} {risetime_err_lower}")
+
+
+            plt.close("all")
             # Free up memory
             del df, time, flux, smoothed_flux, df_new, x_global, y_global, y_err_global
             gc.collect()
