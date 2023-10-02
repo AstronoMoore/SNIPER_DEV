@@ -888,9 +888,8 @@ for object in tqdm(IAU_list["IAU_NAME"], leave=False):
             "fireball_power_lower": fireball_power_lower,
             "fireball_power_upper": fireball_power_upper,
         }
-        SNIPER_OUTPUT = SNIPER_OUTPUT[
-            SNIPER_OUTPUT["TNS Name"] != object
-        ]  # removing bazin only results from table
+        #SNIPER_OUTPUT = SNIPER_OUTPUT[SNIPER_OUTPUT["TNS Name"] != object]  # removing bazin only results from table
+        SNIPER_OUTPUT.drop(SNIPER_OUTPUT.loc[SNIPER_OUTPUT['TNS Name']==object].index, inplace=True)
 
         # SNIPER_OUTPUT = SNIPER_OUTPUT.append(results_dict, ignore_index=True)
         SNIPER_OUTPUT = pd.concat(

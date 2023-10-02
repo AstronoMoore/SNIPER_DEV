@@ -25,19 +25,35 @@ import matplotlib
 import matplotlib.pyplot as plt
 from emcee.autocorr import AutocorrError, function_1d
 import yaml
-from multiprocessing import Pool
-from schwimmbad import MPIPool
+#from multiprocessing import Pool
+#from schwimmbad import MPIPool
 import logging
 import warnings
 from pathlib import Path
-import dynesty
 
-import mpi4py.MPI as MPI
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.signal import savgol_filter
+# import tracemalloc
+# tracemalloc.start()
 
-if MPI.COMM_WORLD.Get_size() > 1:
-    print("MPI is enabled.")
-else:
-    print("MPI is not enabled.")
+
+from collections import defaultdict
+matplotlib.use('MACOSX')
+
+# gc.set_debug(gc.DEBUG_STATS)
+
+
+# import dynesty
+# import mpi4py
+
+# import mpi4py.MPI as MPI
+
+# if MPI.COMM_WORLD.Get_size() > 1:
+#     print("MPI is enabled.")
+# else:
+#     print("MPI is not enabled.")
 
 my_file = Path("SNIPER_config.yml")
 if my_file.is_file():
@@ -271,16 +287,16 @@ def fit_bazin(**kwargs):
     pos5 = float(priors[4]) + 5 * np.random.randn(nwalkers)
     pos = np.column_stack((pos1, pos2, pos3, pos4, pos5))
 
-    if MPI.COMM_WORLD.Get_size() > 1:
+    # if MPI.COMM_WORLD.Get_size() > 1:
 
-        with Pool() as pool:
-            sampler = emcee.EnsembleSampler(
-                nwalkers, ndim, lnprobline_bazin, pool=pool
-            )
-            sampler.run_mcmc(pos, nsteps, progress=progress)
-    else:
-        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
-        sampler.run_mcmc(pos, nsteps, progress=progress)
+    #     with Pool() as pool:
+    #         sampler = emcee.EnsembleSampler(
+    #             nwalkers, ndim, lnprobline_bazin, pool=pool
+    #         )
+    #         sampler.run_mcmc(pos, nsteps, progress=progress)
+    # else:
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobline_bazin)
+    sampler.run_mcmc(pos, nsteps, progress=progress)
 
     samples = sampler.get_chain()
     flat_samples = sampler.get_chain(
@@ -296,7 +312,7 @@ def fit_bazin(**kwargs):
     if plot:
         labels = ["A", "B", "T_rise", "T_fall", "t0"]
 
-        plt.figure(dpi=300)
+        fig, ax = plt.subplots(dpi=300)
         fig = corner.corner(
             flat_samples,
             labels=labels,
@@ -305,6 +321,8 @@ def fit_bazin(**kwargs):
             title_kwargs={"fontsize": 12},
         )
         plt.savefig(output_dir + "/corner/" + object_name + "_bazin_corner_plot.png")
+        del fig
+        plt.close('all')
 
         plt.figure(dpi=200)
         fig, axes = plt.subplots(5, figsize=(10, 7), sharex=True)
@@ -319,7 +337,7 @@ def fit_bazin(**kwargs):
 
         axes[-1].set_xlabel("step number")
         plt.savefig(output_dir + "/scatter/" + object_name + "_bazin_scatter.png")
-        plt.close()
+        plt.close('all')
 
     A = flat_samples[:, 0]
     B = flat_samples[:, 1]
@@ -348,15 +366,15 @@ def fit_bazin(**kwargs):
 
     if plot:
         # overplotting on graph
-        plt.figure(dpi=300)
+        fig, ax = plt.subplots(dpi=300)
         inds = np.random.randint(len(flat_samples), size=100)
         x0 = np.linspace(np.min(x_global), np.max(x_global), 300)
         for ind in inds:
             sample = flat_samples[ind]
             plt.plot(x0, bazin(x0, *sample), "deepskyblue", alpha=0.1)
-        plt.plot([], [], color="deepskyblue", alpha=0.9, label="Bazin Evaluations")
+        ax.plot([], [], color="deepskyblue", alpha=0.9, label="Bazin Evaluations")
 
-        plt.errorbar(
+        ax.errorbar(
             x_global,
             y_global,
             y_err_global,
@@ -366,13 +384,13 @@ def fit_bazin(**kwargs):
             label="ATLAS o-band",
         )
 
-        plt.ylim(np.min(y_global) * 0.9, np.max(y_global) * 1.1)
-        plt.xlim(np.min(x_global) * 0.999, np.max(x_global) * 1.001)
+        ax.set_ylim(np.min(y_global) * 0.9, np.max(y_global) * 1.1)
+        ax.set_xlim(np.min(x_global) * 0.999, np.max(x_global) * 1.001)
 
-        plt.ylabel(r" Flux Density [$\rm \mu Jy$]")
-        plt.xlabel(r"time [mjd]")
-        plt.legend(frameon=False)
-        plt.vlines(
+        ax.set_ylabel(r" Flux Density [$\rm \mu Jy$]")
+        ax.set_xlabel(r"time [mjd]")
+        ax.legend(frameon=False)
+        ax.vlines(
             bazin_maximum,
             -50,
             np.max(y_global) * 1.3,
@@ -380,7 +398,7 @@ def fit_bazin(**kwargs):
             alpha=0.9,
             linestyle="--",
         )
-        plt.vlines(
+        ax.vlines(
             time_max_mcmc,
             -50,
             np.max(y_global) * 1.3,
@@ -388,11 +406,15 @@ def fit_bazin(**kwargs):
             alpha=0.9,
             linestyle="--",
         )
-        plt.savefig(output_dir + "/overplot/" + object_name + "_bazin_overplot.png")
+        fig.savefig(output_dir + "/overplot/" + object_name + "_bazin_overplot.png")
 
-    plt.close()
+    plt.close('all')
+    #del fig
     print("best params", best_params)
     gc.collect()
+    sampler = []
+    samples = []
+    mcmc = []
     return (
         time_max_mcmc,
         time_max_mcmc_err,
@@ -461,8 +483,10 @@ def fit_fireball(**kwargs):
             title_kwargs={"fontsize": 12},
         )
         plt.savefig(output_dir + "/corner/" + object + "_fireball_corner.png")
+        del fig
 
-        plt.figure(dpi=200)
+
+        fig, ax = plt.subplots(dpi=300)
         fig, axes = plt.subplots(3, figsize=(10, 7), sharex=True)
         samples = sampler.get_chain()
         labels = labels
@@ -500,7 +524,8 @@ def fit_fireball(**kwargs):
         plt.legend(frameon=False)
         plt.savefig(output_dir + "/overplot/" + object+ "_fireball_overplot.png")
 
-        plt.close()
+        plt.close('all')
+        del fig
 
     best_params = np.zeros(ndim)
     lower_quartile = np.zeros(ndim)
@@ -516,6 +541,10 @@ def fit_fireball(**kwargs):
     plt.close()
     plt.close("all")
     gc.collect()
+    sampler = []
+    samples = []
+    mcmc = []
+
     return best_params, upper_quartile, lower_quartile, flat_samples
 
 
@@ -600,10 +629,6 @@ if __name__ == "__main__":
 
 
     #for TNS_ID in tqdm(IAU_list["IAU_NAME"], leave=False):
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import pandas as pd
-    from scipy.signal import savgol_filter
 
     # Preallocate arrays
     n_iau = len(IAU_list["IAU_NAME"])
@@ -648,9 +673,14 @@ if __name__ == "__main__":
             y_global = df_new["uJy"].values.astype("float64")
             y_err_global = df_new["duJy"].values.astype("float64")
 
-            # Update arrays
-            t_minus_half_samples[i] = t_guess - MJD_minus
-            t_plus_half_samples[i] = t_guess + MJD_plus
+            x_initial = x_global.copy()
+            y_initial = y_global.copy()
+            y_err_initial = y_err_global.copy()
+
+
+            # # Update arrays
+            # t_minus_half_samples[i] = t_guess - MJD_minus
+            # t_plus_half_samples[i] = t_guess + MJD_plus
             
             #fit_bazin(**kwargs)
             print('buring Bazin')
@@ -761,7 +791,7 @@ if __name__ == "__main__":
                 "t_plus_five": t_plus_five
             }
 
-            SNIPER_OUTPUT = pd.concat([SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True)
+            #SNIPER_OUTPUT = pd.concat([SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True)
             SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
 
 
@@ -806,6 +836,124 @@ if __name__ == "__main__":
 
 
 
+
+
+                # Making a combined overplot plot for FIREBALL AND BAZIN 
+
+
+                fig, ax = plt.subplots(dpi=300)
+                ax.errorbar(
+                    x_initial,
+                    y_initial,
+                    y_err_initial,
+                    color="grey",
+                    linestyle="",
+                    fmt=".",
+                )
+
+                xrange = np.linspace(np.min(x_initial),np.max(x_initial),500)
+
+                flat_samples_bazin = bazin_results[7]
+                inds = np.random.randint(len(flat_samples_bazin), size=100)
+                for ind in inds:
+                    sample = flat_samples_bazin[ind]
+                    ax.plot(x_range, bazin(x_range, *sample), "cornflowerblue", alpha=0.1)
+
+
+
+                ax.errorbar(
+                    x_global,
+                    y_global,
+                    y_err_global,
+                    color="k",
+                    linestyle="",
+                    fmt=".",
+                )
+
+                ax.vlines(
+                    np.nanmean(t_minus_half_samples),
+                    -100,
+                    1.5 * baz_max_flux,
+                    linestyles="--",
+                    color="k",
+                    label="T minus half",
+                )
+                ax.vlines(
+                    np.mean(t_plus_half_samples),
+                    -100,
+                    1.5 * baz_max_flux,
+                    linestyles="--",
+                    color="k",
+                    label="T plus half",
+                )
+
+                if t_max_plot == None:
+                    t_max_plot = np.max(x_global)
+
+                if t_min_plot == None:
+                    print("FAILED TO ESTABLISH A T MIN from the BAZIN FIT...")
+
+                ax.vlines(
+                    t_min_plot,
+                    -100,
+                    1.5 * baz_max_flux,
+                    linestyles="--",
+                    color="steelblue",
+                    label="tmin_plot",
+                )
+
+
+                ax.set_ylabel(r" Flux Density [$\rm \mu Jy$]")
+                ax.set_xlabel(r"time [mjd]")
+                ax.set_ylim(-10, 1.4 * baz_max_flux)
+                # removing lightcurve after max light
+
+                x_range = np.linspace(
+                    np.min(x_global), baz_tmax(t0, T_rise, T_fall), 200
+                )  # changing xrange to plot rise
+
+                flat_samples_fireball = fireball_results[3]
+                inds = np.random.randint(len(flat_samples_fireball), size=100)
+                for ind in inds:
+                    sample = flat_samples_fireball[ind]
+                    ax.plot(
+                        x_range,
+                        rise_mjd_fit(x_range, *sample),
+                        "mediumorchid",
+                        alpha=0.1,
+                    )
+
+                # Marking on T Explode
+                ax.vlines(
+                    T_explode,
+                    -100,
+                    1.5 * baz_max_flux,
+                    linestyles="--",
+                    color="r",
+                    label="T Explosion",
+                )
+
+                # Marking on T Max
+                ax.vlines(
+                    bazin_max,
+                    -100,
+                    1.5 * baz_max_flux,
+                    linestyles="--",
+                    color="b",
+                    label="Bazin Maximum",
+                )
+
+                ax.set_title(str(TNS_ID))
+                ax.legend()
+                ax.set_xlim(t_min_plot - 80, t_max_plot + 80)
+
+                fig.savefig(output_dir + "/combined_output/" + str(TNS_ID) + ".png")
+                plt.close(fig)
+
+
+
+
+
                 fireball_power = fireball_results[0][2]
                 fireball_power_lower = fireball_results[0][2] - fireball_results[1][2]
                 fireball_power_upper = fireball_results[0][1] - fireball_results[2][1]
@@ -838,6 +986,8 @@ if __name__ == "__main__":
                     "fireball_power_lower": fireball_power_lower,
                     "fireball_power_upper": fireball_power_upper,
                 }
+                SNIPER_OUTPUT.drop(SNIPER_OUTPUT.loc[SNIPER_OUTPUT['TNS Name']==TNS_ID].index, inplace=True)
+                #SNIPER_OUTPUT = SNIPER_OUTPUT[SNIPER_OUTPUT["TNS Name"] != object]  # removing bazin only results from table
 
                 SNIPER_OUTPUT = pd.concat([SNIPER_OUTPUT, pd.DataFrame([results_dict])], ignore_index=True)
                 SNIPER_OUTPUT.to_csv(output_dir + "/SNIPER_OUTPUT.csv", index=False)
@@ -848,7 +998,15 @@ if __name__ == "__main__":
 
             plt.close("all")
             # Free up memory
-            del df, time, flux, smoothed_flux, df_new, x_global, y_global, y_err_global
+            #print(tracemalloc.get_traced_memory())
+
+            flat_samples_fireball  = []
+            flat_samples_bazin = []
+            bazin_results = []
+            fireball_results =[]
+            xrange = []
+            inds = []
+            del df, time, flux, smoothed_flux, df_new, x_global, y_global, y_err_global, x_initial, y_initial, y_err_initial, results_dict, fig
             gc.collect()
 
         except (FileNotFoundError, ValueError, TypeError) as e:
