@@ -615,6 +615,8 @@ if __name__ == "__main__":
     MJD_plus = 300
     flux_unc_cut = 80.0
 
+    sniper_failed_list = []
+
     for i, TNS_ID in enumerate(tqdm(IAU_list["IAU_NAME"], leave=False)):
         try:
             print(f"Working on {TNS_ID}")
@@ -850,4 +852,9 @@ if __name__ == "__main__":
             gc.collect()
 
         except (FileNotFoundError, ValueError, TypeError) as e:
+            sniper_failed_list.append(TNS_ID)
             print(f"Error processing {TNS_ID}: {str(e)}")
+
+print('SNIPER Failed for these objects')
+
+print(sniper_failed_list)
